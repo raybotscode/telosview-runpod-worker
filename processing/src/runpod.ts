@@ -91,6 +91,7 @@ export async function launchPod(options: PodOptions = {}): Promise<string> {
     imageName,
     name,
     ports,
+    supportPublicIp: true,
   };
 
   if (env && env.length > 0) {

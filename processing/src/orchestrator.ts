@@ -1,7 +1,6 @@
 import { chromium, type Browser, type BrowserContext, type Page } from 'playwright';
 import path from 'path';
 import fs from 'fs';
-import { execSync } from 'child_process';
 import { fileURLToPath } from 'url';
 import {
   launchPod,
@@ -9,7 +8,6 @@ import {
   waitForReady,
   waitForHttpReady,
   getPodEndpoint,
-  getPodStatus,
 } from './runpod.js';
 import type {
   ProcessingJob,
@@ -210,8 +208,8 @@ async function processProjectLocal(
 
 /**
  * RunPod GPU processing — launches a remote pod with real GPU.
- * Uses base image + SSH to run startup script.
- * No dockerStartCmd (prevents public IP). SSH key passed via PUBLIC_KEY env var.
+ * Uses base image + startup script via dockerStartCmd.
+ * supportPublicIp: true ensures the pod gets a public IP.
  */
 const STARTUP_SCRIPT_URL = 'https://raw.githubusercontent.com/raybotscode/telosview-runpod-worker/main/processing/runpod-worker/startup.sh';
 
@@ -232,18 +230,12 @@ async function processProjectRunPod(
       metrics: null,
     });
 
-    // 1. Launch GPU pod with SSH key — no dockerStartCmd (that prevents public IP)
-    const publicKey = fs.readFileSync(
-      process.env.RUNPOD_SSH_KEY_PATH
-        ? `${process.env.RUNPOD_SSH_KEY_PATH}.pub`
-        : `${process.env.HOME}/.ssh/id_ed25519.pub`,
-      'utf-8'
-    ).trim();
-
+    // 1. Launch GPU pod with base image + startup script
+    //    supportPublicIp: true is critical — without it, COMMUNITY pods get no public IP
     podId = await launchPod({
       name: `telosview-${job.projectId}`,
-      ports: ['22/tcp', '8080/http'],
-      env: [{ key: 'PUBLIC_KEY', value: publicKey }],
+      ports: ['8080/http'],
+      dockerStartCmd: ['bash', '-c', `curl -sL ${STARTUP_SCRIPT_URL} | bash`],
     });
     console.log(`[orchestrator] Launched pod ${podId}`);
 
@@ -259,35 +251,13 @@ async function processProjectRunPod(
 
     const podInfo = await waitForReady(podId, 10 * 60 * 1000);
 
-    // 3. Get SSH connection info from runtime ports
-    const sshPort = podInfo.runtime?.ports?.find((p: any) => p.privatePort === 22);
-    if (!sshPort) throw new Error('No SSH port found on pod — container may not have started');
-
-    const sshHost = sshPort.ip;
-    const sshPortNum = sshPort.publicPort;
-    const sshKey = process.env.RUNPOD_SSH_KEY_PATH || `${process.env.HOME}/.ssh/id_ed25519`;
-
-    console.log(`[orchestrator] Pod SSH: ${sshHost}:${sshPortNum}`);
-
+    // 3. Wait for HTTP service (startup script installs deps and starts server)
     onProgress?.({
       projectId: job.projectId,
       status: 'processing',
       stage: 'loading',
       progress: 4,
       message: 'Installing Node.js and Chromium on GPU pod...',
-      metrics: null,
-    });
-
-    // 4. Bootstrap via SSH — run startup script that installs everything and starts server
-    await bootstrapViaSSH(sshHost, sshPortNum, sshKey);
-
-    // 5. Wait for HTTP service
-    onProgress?.({
-      projectId: job.projectId,
-      status: 'processing',
-      stage: 'loading',
-      progress: 6,
-      message: 'Waiting for worker HTTP service...',
       metrics: null,
     });
 
@@ -390,49 +360,6 @@ async function processProjectRunPod(
         console.error(`[orchestrator] Failed to terminate pod ${podId}:`, err.message)
       );
     }
-  }
-}
-
-
-/**
- * Bootstrap the worker on a RunPod pod via SSH.
- * Runs the startup script which installs Node.js, Chromium, clones repo, and starts server.
- */
-async function bootstrapViaSSH(
-  sshHost: string,
-  sshPort: number,
-  sshKey: string,
-): Promise<void> {
-  const sshBase = `ssh -o StrictHostKeyChecking=no -o ConnectTimeout=10 -p ${sshPort} -i ${sshKey} root@${sshHost}`;
-
-  // Wait for SSH to be ready
-  console.log('[orchestrator] Waiting for SSH...');
-  const deadline = Date.now() + 3 * 60 * 1000;
-  while (Date.now() < deadline) {
-    try {
-      execSync(`${sshBase} -o BatchMode=yes "echo ready"`, {
-        timeout: 10000,
-        encoding: 'utf-8',
-        stdio: 'pipe',
-      });
-      console.log('[orchestrator] SSH ready');
-      break;
-    } catch {
-      await new Promise(resolve => setTimeout(resolve, 5000));
-    }
-  }
-
-  // Run startup script (installs Node.js, Chromium, clones repo, starts server)
-  console.log('[orchestrator] Running startup script via SSH...');
-  try {
-    execSync(
-      `${sshBase} "curl -sL ${STARTUP_SCRIPT_URL} | bash"`,
-      { timeout: 10 * 60 * 1000, encoding: 'utf-8', stdio: 'pipe' }
-    );
-    console.log('[orchestrator] Startup script completed');
-  } catch (err: any) {
-    console.error('[orchestrator] Startup script failed:', err.stderr || err.message);
-    throw err;
   }
 }
 
