@@ -257,11 +257,9 @@ async function processProjectRunPod(
       metrics: null,
     });
 
-    const ready = await waitForReady(podId, 10 * 60 * 1000);
-    if (!ready) throw new Error('Pod did not become ready in time');
+    const podInfo = await waitForReady(podId, 10 * 60 * 1000);
 
-    // 3. Get SSH connection info
-    const podInfo = await getPodStatus(podId);
+    // 3. Get SSH connection info from runtime ports
     const sshPort = podInfo.runtime?.ports?.find((p: any) => p.privatePort === 22);
     if (!sshPort) throw new Error('No SSH port found on pod — container may not have started');
 

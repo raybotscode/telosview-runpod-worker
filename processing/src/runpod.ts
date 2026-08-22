@@ -94,7 +94,7 @@ export async function launchPod(options: PodOptions = {}): Promise<string> {
   };
 
   if (env && env.length > 0) {
-    body.env = env;
+    body.env = Object.fromEntries(env.map(e => [e.key, e.value]));
   }
 
   if (dockerStartCmd) {
@@ -130,36 +130,27 @@ export async function waitForReady(
   podId: string,
   timeoutMs: number = 10 * 60 * 1000,
   pollIntervalMs: number = 10_000
-): Promise<boolean> {
+): Promise<PodInfo> {
   const deadline = Date.now() + timeoutMs;
-  let runningSince: number | null = null;
 
   while (Date.now() < deadline) {
     const pod = await getPodStatus(podId);
-    console.log(`[runpod] Pod ${podId} status: ${pod.desiredStatus}`);
-
-    if (pod.desiredStatus === 'RUNNING') {
-      if (!runningSince) {
-        runningSince = Date.now();
-        console.log(`[runpod] Pod ${podId} is RUNNING, waiting 30s for stability...`);
-      }
-      // After 30 seconds of continuous RUNNING status, consider it ready
-      if (Date.now() - runningSince >= 30_000) {
-        console.log(`[runpod] Pod ${podId} stable RUNNING for 30s`);
-        return true;
-      }
-    } else {
-      runningSince = null; // Reset if status changes
-    }
+    console.log(`[runpod] Pod ${podId} status: ${pod.desiredStatus} runtime: ${pod.runtime ? 'yes' : 'no'} ip: ${pod.publicIp || 'none'}`);
 
     if (pod.desiredStatus === 'EXITED' || pod.desiredStatus === 'DEAD') {
       throw new Error(`Pod ${podId} entered terminal state: ${pod.desiredStatus}`);
     }
 
+    // Pod is ready when runtime is non-null (container started, ports available)
+    if (pod.runtime) {
+      console.log(`[runpod] Pod ${podId} ready — runtime active`);
+      return pod;
+    }
+
     await new Promise(resolve => setTimeout(resolve, pollIntervalMs));
   }
 
-  return false;
+  throw new Error(`Pod ${podId} not ready after ${timeoutMs / 1000}s`);
 }
 
 /**
