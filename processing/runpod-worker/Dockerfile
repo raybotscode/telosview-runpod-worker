@@ -1,17 +1,18 @@
-# RunPod GPU Processing Image for TelosView v2
-# Runs splat.js Gaussian splatting with real CUDA/WebGPU (no SwiftShader)
-FROM nvidia/cuda:12.2.0-devel-ubuntu22.04
+# TelosView RunPod GPU Worker
+# Built on RunPod's PyTorch base (pre-cached on their infra — instant pulls)
+# Includes: Node.js 22, Chromium with Vulkan, Playwright, splat.js pipeline
+FROM runpod/pytorch:2.1.0-py3.10-cuda11.8.0-devel-ubuntu22.04
 
-# Avoid interactive prompts
 ENV DEBIAN_FRONTEND=noninteractive
 
 # Install Node.js 22
-RUN apt-get update && apt-get install -y curl && \
+RUN apt-get update && \
+    apt-get install -y curl wget gnupg ca-certificates && \
     curl -fsSL https://deb.nodesource.com/setup_22.x | bash - && \
     apt-get install -y nodejs && \
     apt-get clean && rm -rf /var/lib/apt/lists/*
 
-# Install Chromium dependencies (for headless WebGPU with real GPU)
+# Install Chromium + Vulkan + Playwright system deps
 RUN apt-get update && apt-get install -y \
     libnss3 libatk1.0-0 libatk-bridge2.0-0 libcups2 libdrm2 \
     libxkbcommon0 libxcomposite1 libxdamage1 libxrandr2 \
@@ -19,41 +20,39 @@ RUN apt-get update && apt-get install -y \
     libx11-xcb1 libxcb-dri3-0 libxext6 libxfixes3 \
     libvulkan1 mesa-vulkan-drivers vulkan-tools \
     fonts-liberation fonts-noto-color-emoji \
-    wget gnupg ca-certificates \
+    libnspr4 libnss3 libatk1.0-0t64 libatk-bridge2.0-0t64 \
+    libcups2t64 libdrm2t64 libxkbcommon0t64 libxcomposite1t64 \
+    libxdamage1t64 libxrandr2t64 libgbm1t64 libpango-1.0-0t64 \
+    libcairo2t64 libasound2t64 libxshmfence1t64 \
     && apt-get clean && rm -rf /var/lib/apt/lists/*
 
-# Install Chromium (not from Playwright — system Chromium with Vulkan support)
-RUN wget -q -O - https://dl-ssl.google.com/linux/linux_signing_key.pub | gpg --dearmor > /usr/share/keyrings/google-chrome.gpg && \
-    echo "deb [arch=amd64 signed-by=/usr/share/keyrings/google-chrome.gpg] http://dl.google.com/linux/chrome/deb/ stable main" > /etc/apt/sources.list.d/google-chrome.list && \
-    apt-get update && apt-get install -y google-chrome-stable && \
-    apt-get clean && rm -rf /var/lib/apt/lists/*
-
-# Tell Playwright to use system Chrome
-ENV PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH=/usr/bin/google-chrome-stable
-
-# Also install Playwright + its Chromium for fallback
+# Set up app directory
 WORKDIR /app
+
+# Install npm dependencies first (layer caching)
 COPY package.json ./
 RUN npm install
 
-# Copy the Express server
+# Install Playwright Chromium + its system deps
+RUN npx playwright install-deps chromium && npx playwright install chromium
+
+# Tell Playwright to prefer its bundled Chromium (has proper GPU support)
+ENV PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH=""
+
+# Copy worker files
 COPY server.mjs ./
-
-# Copy worker.html
 COPY worker.html ./
-
-# Copy splat.js source into /app/src/ (so worker.html can import from /src/index.js)
 COPY src/ ./src/
 
-# Create directories for runtime data
+# Create runtime directories
 RUN mkdir -p /app/frames /app/output
 
-# Expose the processing server port
+# Expose processing server port
 EXPOSE 8080
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=5s --retries=3 \
     CMD curl -f http://localhost:8080/health || exit 1
 
-# Start the Express server
+# Start the worker server
 CMD ["node", "server.mjs"]

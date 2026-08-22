@@ -208,9 +208,9 @@ async function processProjectLocal(
 
 /**
  * RunPod GPU processing — launches a remote pod with real GPU.
- * Uses runpodctl CLI (REST v2 internally) + startup script via dockerArgs.
+ * Uses runpodctl CLI (REST v2 internally) + custom Docker image from GHCR.
+ * The image has Node.js, Chromium, Playwright, and splat.js baked in.
  */
-const STARTUP_SCRIPT_URL = 'https://raw.githubusercontent.com/raybotscode/telosview-runpod-worker/master/processing/runpod-worker/startup.sh';
 
 async function processProjectRunPod(
   job: ProcessingJob,
@@ -229,12 +229,11 @@ async function processProjectRunPod(
       metrics: null,
     });
 
-    // 1. Launch GPU pod with base image + startup script
+    // 1. Launch GPU pod with custom image (everything baked in)
     //    CLI uses REST v2 internally — actually works (unlike REST v1)
     podId = await launchPod({
       name: `telosview-${job.projectId}`,
       ports: ['8080/http', '22/tcp'],
-      dockerArgs: `bash -c "curl -sL ${STARTUP_SCRIPT_URL} | bash"`,
     });
     console.log(`[orchestrator] Launched pod ${podId}`);
 
@@ -250,13 +249,13 @@ async function processProjectRunPod(
 
     const podInfo = await waitForReady(podId, 10 * 60 * 1000);
 
-    // 3. Wait for HTTP service (startup script installs deps and starts server)
+    // 3. Wait for HTTP service (container starts server.mjs automatically)
     onProgress?.({
       projectId: job.projectId,
       status: 'processing',
       stage: 'loading',
       progress: 4,
-      message: 'Installing Node.js and Chromium on GPU pod...',
+      message: 'Waiting for GPU pod HTTP service...',
       metrics: null,
     });
 

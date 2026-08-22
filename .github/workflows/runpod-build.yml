@@ -63,15 +63,3 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
-
-      - name: Make package public
-        run: |
-          # Wait for package to be registered
-          sleep 10
-          gh api \
-            --method PUT \
-            -H "Accept: application/vnd.github+json" \
-            "/user/packages/container/${{ env.IMAGE_NAME }}/visibility" \
-            -f visibility='public' || echo "Could not set visibility (may need manual setting)"
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

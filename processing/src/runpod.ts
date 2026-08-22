@@ -33,6 +33,7 @@ export interface PodOptions {
   cloudType?: 'SECURE' | 'COMMUNITY';
   name?: string;
   ports?: string[];
+  registryAuthId?: string;
   env?: Record<string, string>;
   dockerArgs?: string;
 }
@@ -60,10 +61,11 @@ export async function launchPod(options: PodOptions = {}): Promise<string> {
     gpuTypeId = process.env.RUNPOD_GPU_TYPE || 'NVIDIA GeForce RTX 3090',
     gpuCount = 1,
     containerDiskInGb = 50,
-    imageName = process.env.RUNPOD_DOCKER_IMAGE || 'runpod/pytorch:1.1.0-cu1281-torch280-ubuntu2204',
+    imageName = process.env.RUNPOD_DOCKER_IMAGE || 'ghcr.io/raybotscode/telosview-runpod-worker-worker:latest',
     cloudType = 'SECURE',
     name = 'telosview-processor',
     ports = ['8080/http', '22/tcp'],
+    registryAuthId = process.env.RUNPOD_REGISTRY_AUTH_ID || 'cmt4tl46r005k8he9y66fo6jp',
     env,
     dockerArgs,
   } = options;
@@ -78,6 +80,10 @@ export async function launchPod(options: PodOptions = {}): Promise<string> {
   args += ` --ports "${ports.join(',')}"`;
   args += ` --ssh`;
   args += ` -o json`;
+
+  if (registryAuthId) {
+    args += ` --registry-auth-id ${registryAuthId}`;
+  }
 
   if (dockerArgs) {
     args += ` --docker-args '${dockerArgs}'`;
