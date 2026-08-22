@@ -12,7 +12,7 @@ RUN apt-get update && \
     apt-get install -y nodejs && \
     apt-get clean && rm -rf /var/lib/apt/lists/*
 
-# Install Chromium + Vulkan + Playwright system deps
+# Install Chromium + Vulkan + Playwright system deps (Ubuntu 22.04 package names)
 RUN apt-get update && apt-get install -y \
     libnss3 libatk1.0-0 libatk-bridge2.0-0 libcups2 libdrm2 \
     libxkbcommon0 libxcomposite1 libxdamage1 libxrandr2 \
@@ -20,10 +20,7 @@ RUN apt-get update && apt-get install -y \
     libx11-xcb1 libxcb-dri3-0 libxext6 libxfixes3 \
     libvulkan1 mesa-vulkan-drivers vulkan-tools \
     fonts-liberation fonts-noto-color-emoji \
-    libnspr4 libnss3 libatk1.0-0t64 libatk-bridge2.0-0t64 \
-    libcups2t64 libdrm2t64 libxkbcommon0t64 libxcomposite1t64 \
-    libxdamage1t64 libxrandr2t64 libgbm1t64 libpango-1.0-0t64 \
-    libcairo2t64 libasound2t64 libxshmfence1t64 \
+    libnspr4 \
     && apt-get clean && rm -rf /var/lib/apt/lists/*
 
 # Set up app directory
