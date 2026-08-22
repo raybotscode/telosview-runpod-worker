@@ -23,6 +23,11 @@ RUN apt-get update && apt-get install -y \
     libnspr4 \
     && apt-get clean && rm -rf /var/lib/apt/lists/*
 
+# Ensure NVIDIA Vulkan ICD is registered (RunPod mounts the driver)
+ENV NVIDIA_VISIBLE_DEVICES=all
+ENV NVIDIA_DRIVER_CAPABILITIES=compute,utility,graphics
+ENV VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/nvidia_icd.json
+
 # Set up app directory
 WORKDIR /app
 
