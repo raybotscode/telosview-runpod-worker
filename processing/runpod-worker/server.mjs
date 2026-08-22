@@ -242,7 +242,10 @@ async function runProcessing(job, maxIters) {
     '--no-sandbox',
     '--disable-dev-shm-usage',
     '--disable-gpu-driver-bug-workarounds',
-    '--enable-unsafe-swiftshader',  // fallback if GPU fails
+    '--use-vulkan',
+    '--disable-features=VulkanFromANGLE',
+    '--enable-unsafe-webgpu',
+    '--disable-software-rasterizer',
   ];
 
   // On a real GPU server, we do NOT add --use-vulkan=swiftshader
