@@ -74,9 +74,7 @@ export async function launchPod(options: PodOptions = {}): Promise<string> {
   args += ` --gpu-id "${gpuTypeId}"`;
   args += ` --gpu-count ${gpuCount}`;
   args += ` --container-disk-in-gb ${containerDiskInGb}`;
-  args += ` --cloud-type ${cloudType}`;
   args += ` --ports "${ports.join(',')}"`;
-  args += ` --ssh`;
   args += ` -o json`;
 
   if (dockerArgs) {
