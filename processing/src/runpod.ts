@@ -1,7 +1,7 @@
 /**
  * RunPod API client for programmatic GPU pod management.
  * Uses RunPod's REST API v1 for pod lifecycle management.
- * REST API supports dockerStartCmd which GraphQL's podFindAndDeployOnDemand does not.
+ * Uses a pre-built Docker image — no SSH bootstrap or dockerStartCmd needed.
  */
 
 const RUNPOD_REST_BASE = 'https://rest.runpod.io/v1';
@@ -45,7 +45,6 @@ export interface PodOptions {
   name?: string;
   ports?: string[];
   env?: Array<{ key: string; value: string }>;
-  dockerStartCmd?: string[];
 }
 
 export interface PodInfo {
@@ -74,12 +73,11 @@ export async function launchPod(options: PodOptions = {}): Promise<string> {
     gpuCount = 1,
     containerDiskInGb = 50,
     volumeInGb = 0,
-    imageName = process.env.RUNPOD_DOCKER_IMAGE || 'runpod/pytorch:1.1.0-cu1281-torch280-ubuntu2204',
+    imageName = process.env.RUNPOD_DOCKER_IMAGE || 'ghcr.io/raybotscode/telosview-runpod-worker-worker:latest',
     cloudType = 'COMMUNITY',
     name = 'telosview-processor',
     ports = ['8080/http'],
     env,
-    dockerStartCmd,
   } = options;
 
   const body: Record<string, any> = {
@@ -95,10 +93,6 @@ export async function launchPod(options: PodOptions = {}): Promise<string> {
 
   if (env && env.length > 0) {
     body.env = env;
-  }
-
-  if (dockerStartCmd) {
-    body.dockerStartCmd = dockerStartCmd;
   }
 
   const pod = await restFetch<{ id: string; desiredStatus: string }>('/pods', {
@@ -118,48 +112,9 @@ export async function terminatePod(podId: string): Promise<void> {
   console.log(`[runpod] Terminated pod ${podId}`);
 }
 
-/**
- * Get detailed pod status including port mappings (uses GraphQL since REST doesn't return ports).
- * This is needed for SSH connection info.
- */
+/** Get pod status via REST API. */
 export async function getPodStatus(podId: string): Promise<PodInfo> {
-  // First try REST API for basic status
-  const restInfo = await restFetch<any>(`/pods/${podId}`);
-
-  // If pod is running and we need port info, use GraphQL
-  if (restInfo.publicIp) {
-    try {
-      const apiKey = getApiKey();
-      const gqlRes = await fetch('https://api.runpod.io/graphql', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${apiKey}`,
-        },
-        body: JSON.stringify({
-          query: `query pod($input: PodFilter!) {
-            pod(input: $input) {
-              id desiredStatus
-              runtime {
-                uptimeInSeconds
-                gpus { id gpuUtilPercent memoryUtilPercent }
-                ports { ip isIpPublic privatePort publicPort type }
-              }
-            }
-          }`,
-          variables: { input: { podId } },
-        }),
-      });
-      const gqlData = await gqlRes.json();
-      if (gqlData.data?.pod?.runtime) {
-        return { ...restInfo, runtime: gqlData.data.pod.runtime };
-      }
-    } catch (err: any) {
-      console.log(`[runpod] GraphQL port query failed: ${err.message}`);
-    }
-  }
-
-  return restInfo as PodInfo;
+  return restFetch<PodInfo>(`/pods/${podId}`);
 }
 
 /**
@@ -171,16 +126,24 @@ export async function waitForReady(
   pollIntervalMs: number = 10_000
 ): Promise<boolean> {
   const deadline = Date.now() + timeoutMs;
+  let runningSince: number | null = null;
 
   while (Date.now() < deadline) {
     const pod = await getPodStatus(podId);
     console.log(`[runpod] Pod ${podId} status: ${pod.desiredStatus}`);
 
-    // REST API: when pod is actually running, publicIp will be set
-    // desiredStatus is "RUNNING" from creation but that just means "we want it running"
-    if (pod.desiredStatus === 'RUNNING' && pod.publicIp) {
-      console.log(`[runpod] Pod ${podId} is RUNNING (IP: ${pod.publicIp})`);
-      return true;
+    if (pod.desiredStatus === 'RUNNING') {
+      if (!runningSince) {
+        runningSince = Date.now();
+        console.log(`[runpod] Pod ${podId} is RUNNING, waiting 30s for stability...`);
+      }
+      // After 30 seconds of continuous RUNNING status, consider it ready
+      if (Date.now() - runningSince >= 30_000) {
+        console.log(`[runpod] Pod ${podId} stable RUNNING for 30s`);
+        return true;
+      }
+    } else {
+      runningSince = null; // Reset if status changes
     }
 
     if (pod.desiredStatus === 'EXITED' || pod.desiredStatus === 'DEAD') {

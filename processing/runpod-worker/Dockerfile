@@ -28,6 +28,9 @@ RUN wget -q -O - https://dl-ssl.google.com/linux/linux_signing_key.pub | gpg --d
     apt-get update && apt-get install -y google-chrome-stable && \
     apt-get clean && rm -rf /var/lib/apt/lists/*
 
+# Tell Playwright to use system Chrome
+ENV PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH=/usr/bin/google-chrome-stable
+
 # Also install Playwright + its Chromium for fallback
 WORKDIR /app
 COPY package.json ./

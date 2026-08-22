@@ -252,15 +252,16 @@ async function runProcessing(job, maxIters) {
 
   let browser;
   try {
-    browser = await chromium.launch({ headless: true, args });
-  } catch (err) {
-    // Try with Playwright's bundled Chromium as fallback
-    console.log(`[worker] System Chromium failed, trying Playwright bundled: ${err.message}`);
+    // Use system Chrome (installed via apt in Dockerfile)
     browser = await chromium.launch({
       headless: true,
       args,
-      channel: 'chromium',
+      channel: 'chrome',
     });
+  } catch (err) {
+    // Fallback to Playwright's bundled Chromium
+    console.log(`[worker] System Chromium failed, trying bundled: ${err.message}`);
+    browser = await chromium.launch({ headless: true, args });
   }
 
   let context;
