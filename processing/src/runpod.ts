@@ -119,10 +119,47 @@ export async function terminatePod(podId: string): Promise<void> {
 }
 
 /**
- * Get the current status of a pod.
+ * Get detailed pod status including port mappings (uses GraphQL since REST doesn't return ports).
+ * This is needed for SSH connection info.
  */
 export async function getPodStatus(podId: string): Promise<PodInfo> {
-  return restFetch<PodInfo>(`/pods/${podId}`);
+  // First try REST API for basic status
+  const restInfo = await restFetch<any>(`/pods/${podId}`);
+
+  // If pod is running and we need port info, use GraphQL
+  if (restInfo.publicIp) {
+    try {
+      const apiKey = getApiKey();
+      const gqlRes = await fetch('https://api.runpod.io/graphql', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${apiKey}`,
+        },
+        body: JSON.stringify({
+          query: `query pod($input: PodFilter!) {
+            pod(input: $input) {
+              id desiredStatus
+              runtime {
+                uptimeInSeconds
+                gpus { id gpuUtilPercent memoryUtilPercent }
+                ports { ip isIpPublic privatePort publicPort type }
+              }
+            }
+          }`,
+          variables: { input: { podId } },
+        }),
+      });
+      const gqlData = await gqlRes.json();
+      if (gqlData.data?.pod?.runtime) {
+        return { ...restInfo, runtime: gqlData.data.pod.runtime };
+      }
+    } catch (err: any) {
+      console.log(`[runpod] GraphQL port query failed: ${err.message}`);
+    }
+  }
+
+  return restInfo as PodInfo;
 }
 
 /**

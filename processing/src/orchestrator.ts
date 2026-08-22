@@ -1,6 +1,7 @@
 import { chromium, type Browser, type BrowserContext, type Page } from 'playwright';
 import path from 'path';
 import fs from 'fs';
+import { execSync } from 'child_process';
 import { fileURLToPath } from 'url';
 import {
   launchPod,
@@ -8,6 +9,7 @@ import {
   waitForReady,
   waitForHttpReady,
   getPodEndpoint,
+  getPodStatus,
 } from './runpod.js';
 import type {
   ProcessingJob,
@@ -32,15 +34,6 @@ function useRunPod(): boolean {
 }
 
 /**
- * Build the startup script that runs inside the RunPod container on boot.
- * Installs Node.js, Chromium, downloads worker files from GitHub, and starts the server.
- */
-function buildStartupScript(): string {
-  // Short command — downloads startup script from GitHub and runs it
-  return 'curl -sL https://raw.githubusercontent.com/raybotscode/telosview-runpod-worker/master/processing/runpod-worker/startup.sh | bash';
-}
-
-/**
  * Launch or reuse a Chromium browser with WebGPU/Vulkan support.
  * On a real GPU server, remove '--use-vulkan=swiftshader'.
  */
@@ -59,7 +52,6 @@ export async function getBrowser(): Promise<Browser> {
     '--disable-dev-shm-usage',
   ];
 
-  // Only use SwiftShader on non-GPU machines (CI, local dev)
   if (!isGpuServer) {
     args.push('--use-vulkan=swiftshader');
   }
@@ -108,12 +100,10 @@ async function processProjectLocal(
     context = await b.newContext();
     const page = await context.newPage();
 
-    // Navigate to worker page served by Express
     const workerUrl = `${job.apiBaseUrl}/worker.html`;
     console.log(`[orchestrator] Navigating to ${workerUrl}`);
     await page.goto(workerUrl, { waitUntil: 'domcontentloaded' });
 
-    // Wait for worker to be ready (2 min timeout)
     console.log('[orchestrator] Waiting for worker ready...');
     await page.waitForFunction(
       () => (window as any).__worker?.status === 'ready',
@@ -131,12 +121,10 @@ async function processProjectLocal(
       metrics: null,
     });
 
-    // Inject job — worker fetches frames from API via HTTP
     await page.evaluate((projectId: string) => {
       (window as any).__process(projectId);
     }, job.projectId);
 
-    // Poll for progress every 2 seconds
     progressInterval = setInterval(async () => {
       try {
         const state: WorkerState = await page.evaluate(() => (window as any).__worker);
@@ -150,12 +138,9 @@ async function processProjectLocal(
             metrics: state.metrics,
           });
         }
-      } catch {
-        // Page may have navigated or closed
-      }
+      } catch {}
     }, 2000);
 
-    // Wait for completion (30 min timeout)
     console.log('[orchestrator] Waiting for processing to complete...');
     await page.waitForFunction(
       () => {
@@ -169,7 +154,6 @@ async function processProjectLocal(
     clearInterval(progressInterval);
     progressInterval = undefined;
 
-    // Get final state
     const finalState: WorkerState = await page.evaluate(() => (window as any).__worker);
 
     if (finalState.status === 'error') {
@@ -180,7 +164,6 @@ async function processProjectLocal(
       };
     }
 
-    // Save PLY to disk
     if (!finalState.plyBase64) {
       return {
         success: false,
@@ -227,8 +210,8 @@ async function processProjectLocal(
 
 /**
  * RunPod GPU processing — launches a remote pod with real GPU.
- * Uses dockerArgs to pass a startup script that installs deps and starts the worker.
- * No SSH required — the pod exposes HTTP on port 8080 via RunPod's proxy.
+ * Uses SSH to bootstrap the worker after the pod is running.
+ * No dockerStartCmd (which prevents the container from starting properly).
  */
 async function processProjectRunPod(
   job: ProcessingJob,
@@ -247,15 +230,14 @@ async function processProjectRunPod(
       metrics: null,
     });
 
-    // 1. Launch GPU pod with startup script via dockerArgs
-    const startupScript = buildStartupScript();
+    // 1. Launch GPU pod (no dockerStartCmd — let it boot normally)
     podId = await launchPod({
       name: `telosview-${job.projectId}`,
-      dockerStartCmd: ['bash', '-c', startupScript],
+      ports: ['22/tcp', '8080/http'],
     });
     console.log(`[orchestrator] Launched pod ${podId}`);
 
-    // 2. Wait for pod RUNNING
+    // 2. Wait for pod to get a public IP (means it's actually running)
     onProgress?.({
       projectId: job.projectId,
       status: 'processing',
@@ -268,22 +250,43 @@ async function processProjectRunPod(
     const ready = await waitForReady(podId, 10 * 60 * 1000);
     if (!ready) throw new Error('Pod did not become ready in time');
 
-    // 3. Wait for HTTP service (startup script installs deps and starts server)
+    // 3. Get SSH connection info from REST API
+    const podInfo = await getPodStatus(podId);
+    const sshPort = podInfo.runtime?.ports?.find(p => p.privatePort === 22);
+    if (!sshPort) throw new Error('No SSH port found on pod');
+
+    const sshHost = sshPort.ip;
+    const sshPortNum = sshPort.publicPort;
+    const sshKey = process.env.RUNPOD_SSH_KEY_PATH || `${process.env.HOME}/.ssh/id_ed25519`;
+
+    console.log(`[orchestrator] Pod SSH: ${sshHost}:${sshPortNum}`);
+
     onProgress?.({
       projectId: job.projectId,
       status: 'processing',
       stage: 'loading',
       progress: 4,
-      message: 'Waiting for worker to install deps and start...',
+      message: 'Installing Node.js and Chromium on GPU pod...',
       metrics: null,
     });
 
-    // Give the startup script time to install Node.js + Chromium + deps
-    // This can take 2-3 minutes on first boot
-    const endpoint = await waitForHttpReady(podId, 8080, 8 * 60 * 1000);
+    // 4. Bootstrap the worker via SSH
+    await bootstrapWorker(sshHost, sshPortNum, sshKey, job.projectId, onProgress);
+
+    // 5. Wait for HTTP service
+    onProgress?.({
+      projectId: job.projectId,
+      status: 'processing',
+      stage: 'loading',
+      progress: 6,
+      message: 'Waiting for worker HTTP service...',
+      metrics: null,
+    });
+
+    const endpoint = await waitForHttpReady(podId, 8080, 5 * 60 * 1000);
     console.log(`[orchestrator] Pod endpoint: ${endpoint}`);
 
-    // 4. Upload frames
+    // 6. Upload frames
     onProgress?.({
       projectId: job.projectId,
       status: 'processing',
@@ -295,7 +298,7 @@ async function processProjectRunPod(
 
     await uploadFramesToPod(endpoint, job.projectId, job.framesPath);
 
-    // 5. Start processing
+    // 7. Start processing
     onProgress?.({
       projectId: job.projectId,
       status: 'processing',
@@ -318,7 +321,7 @@ async function processProjectRunPod(
       throw new Error(`Failed to start processing: ${processRes.status} ${body}`);
     }
 
-    // 6. Stream progress via SSE
+    // 8. Stream progress via SSE
     const result = await streamRunPodProgress(
       endpoint, job.projectId, onProgress
     );
@@ -333,7 +336,7 @@ async function processProjectRunPod(
       };
     }
 
-    // 7. Download PLY
+    // 9. Download PLY
     onProgress?.({
       projectId: job.projectId,
       status: 'processing',
@@ -373,7 +376,6 @@ async function processProjectRunPod(
       podId: podId || undefined,
     };
   } finally {
-    // ALWAYS terminate the pod to avoid wasting budget
     if (podId) {
       console.log(`[orchestrator] Terminating pod ${podId}...`);
       await terminatePod(podId).catch(err =>
@@ -381,6 +383,86 @@ async function processProjectRunPod(
       );
     }
   }
+}
+
+/** Bootstrap the worker on a RunPod pod via SSH */
+async function bootstrapWorker(
+  sshHost: string,
+  sshPort: number,
+  sshKey: string,
+  projectId: string,
+  onProgress?: ProcessingProgressCallback
+): Promise<void> {
+  // Helper to run SSH commands
+  const ssh = (cmd: string, timeout = 300000): string => {
+    try {
+      return execSync(
+        `ssh -o StrictHostKeyChecking=no -o ConnectTimeout=10 -p ${sshPort} -i ${sshKey} root@${sshHost} "${cmd}"`,
+        { timeout, encoding: 'utf-8', stdio: 'pipe' }
+      );
+    } catch (err: any) {
+      console.error(`[orchestrator] SSH command failed: ${cmd}`, err.stderr || err.message);
+      throw err;
+    }
+  };
+
+  // Wait for SSH to be ready
+  console.log('[orchestrator] Waiting for SSH...');
+  const deadline = Date.now() + 3 * 60 * 1000;
+  while (Date.now() < deadline) {
+    try {
+      execSync(
+        `ssh -o StrictHostKeyChecking=no -o ConnectTimeout=5 -o BatchMode=yes -p ${sshPort} -i ${sshKey} root@${sshHost} "echo ready"`,
+        { timeout: 10000, encoding: 'utf-8', stdio: 'pipe' }
+      );
+      console.log('[orchestrator] SSH ready');
+      break;
+    } catch {
+      await new Promise(resolve => setTimeout(resolve, 5000));
+    }
+  }
+
+  // Install Node.js
+  onProgress?.({
+    projectId,
+    status: 'processing',
+    stage: 'loading',
+    progress: 4,
+    message: 'Installing Node.js on GPU pod...',
+    metrics: null,
+  });
+
+  console.log('[orchestrator] Installing Node.js...');
+  ssh('curl -fsSL https://deb.nodesource.com/setup_22.x | bash - && apt-get install -y nodejs', 300000);
+
+  // Install Chromium + Vulkan
+  console.log('[orchestrator] Installing Chromium...');
+  ssh('apt-get update && apt-get install -y chromium-browser libvulkan1 mesa-vulkan-drivers fonts-liberation', 300000);
+
+  // Create worker directory and clone repo
+  console.log('[orchestrator] Setting up worker...');
+  ssh('mkdir -p /app/frames /app/output /app/src');
+  ssh('cd /tmp && git clone --depth 1 https://github.com/raybotscode/telosview-runpod-worker.git telosview-repo');
+  ssh('cp /tmp/telosview-repo/processing/runpod-worker/server.mjs /app/server.mjs');
+  ssh('cp /tmp/telosview-repo/processing/runpod-worker/package.json /app/package.json');
+  ssh('cp /tmp/telosview-repo/processing/worker.html /app/worker.html');
+  ssh('cp -r /tmp/telosview-repo/splat-test/src/* /app/src/');
+  ssh('rm -rf /tmp/telosview-repo');
+
+  // Install npm deps
+  console.log('[orchestrator] Installing npm deps...');
+  ssh('cd /app && npm install --ignore-scripts', 120000);
+
+  // Start server in background
+  console.log('[orchestrator] Starting worker server...');
+  execSync(
+    `ssh -o StrictHostKeyChecking=no -f -p ${sshPort} -i ${sshKey} root@${sshHost} "cd /app && nohup node server.mjs > /tmp/worker.log 2>&1 &"`,
+    { timeout: 30000, encoding: 'utf-8', stdio: 'pipe' }
+  );
+
+  // Wait for server to start
+  await new Promise(resolve => setTimeout(resolve, 5000));
+  console.log('[orchestrator] Worker bootstrap complete');
 }
 
 /** Upload all JPEG frames from a local directory to the RunPod worker */
@@ -395,7 +477,6 @@ async function uploadFramesToPod(
 
   if (files.length === 0) throw new Error('No frame files found');
 
-  // Upload in batches of 20 to avoid huge multipart payloads
   const BATCH = 20;
   for (let i = 0; i < files.length; i += BATCH) {
     const batch = files.slice(i, i + BATCH);
