@@ -1,6 +1,6 @@
 # RunPod GPU Processing Image for TelosView v2
 # Runs splat.js Gaussian splatting with real CUDA/WebGPU (no SwiftShader)
-FROM runpod/pytorch:2.8.0-py3.11-cuda12.8.1-devel-ubuntu22.04
+FROM nvidia/cuda:12.2.0-devel-ubuntu22.04
 
 # Avoid interactive prompts
 ENV DEBIAN_FRONTEND=noninteractive
