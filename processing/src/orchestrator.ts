@@ -208,10 +208,9 @@ async function processProjectLocal(
 
 /**
  * RunPod GPU processing — launches a remote pod with real GPU.
- * Uses base image + startup script via dockerStartCmd.
- * supportPublicIp: true ensures the pod gets a public IP.
+ * Uses runpodctl CLI (REST v2 internally) + startup script via dockerArgs.
  */
-const STARTUP_SCRIPT_URL = 'https://raw.githubusercontent.com/raybotscode/telosview-runpod-worker/main/processing/runpod-worker/startup.sh';
+const STARTUP_SCRIPT_URL = 'https://raw.githubusercontent.com/raybotscode/telosview-runpod-worker/master/processing/runpod-worker/startup.sh';
 
 async function processProjectRunPod(
   job: ProcessingJob,
@@ -231,11 +230,11 @@ async function processProjectRunPod(
     });
 
     // 1. Launch GPU pod with base image + startup script
-    //    supportPublicIp: true is critical — without it, COMMUNITY pods get no public IP
+    //    CLI uses REST v2 internally — actually works (unlike REST v1)
     podId = await launchPod({
       name: `telosview-${job.projectId}`,
-      ports: ['8080/http'],
-      dockerStartCmd: ['bash', '-c', `curl -sL ${STARTUP_SCRIPT_URL} | bash`],
+      ports: ['8080/http', '22/tcp'],
+      dockerArgs: `bash -c "curl -sL ${STARTUP_SCRIPT_URL} | bash"`,
     });
     console.log(`[orchestrator] Launched pod ${podId}`);
 

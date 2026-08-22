@@ -1,112 +1,94 @@
 /**
  * RunPod API client for programmatic GPU pod management.
- * Uses RunPod's REST API v1 for pod lifecycle management.
- * Uses base image + startup script (GHCR pull not reliable on RunPod).
+ * Uses runpodctl CLI (which uses REST v2 internally).
+ * REST v1 is deprecated and broken — CLI is the reliable path.
  */
 
-const RUNPOD_REST_BASE = 'https://rest.runpod.io/v1';
+import { execSync } from 'child_process';
 
-function getApiKey(): string {
-  const key = process.env.RUNPOD_API_KEY;
-  if (!key) throw new Error('RUNPOD_API_KEY environment variable is required');
-  return key;
-}
+const RUNPODCTL = process.env.RUNPODCTL_PATH || `${process.env.HOME}/runpodctl`;
 
-async function restFetch<T = any>(path: string, options: RequestInit = {}): Promise<T> {
-  const url = `${RUNPOD_REST_BASE}${path}`;
-  const response = await fetch(url, {
-    ...options,
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${getApiKey()}`,
-      ...options.headers,
-    },
-  });
-
-  const data = await response.json();
-
-  if (!response.ok) {
-    const detail = typeof data === 'object' ? JSON.stringify(data) : String(data);
-    throw new Error(`RunPod API error: ${response.status} ${response.statusText} — ${detail}`);
+function runPodctl(args: string): string {
+  const cmd = `${RUNPODCTL} ${args}`;
+  console.log(`[runpod] ${cmd}`);
+  try {
+    return execSync(cmd, {
+      encoding: 'utf-8',
+      stdio: 'pipe',
+      timeout: 30000,
+      env: { ...process.env },
+    });
+  } catch (err: any) {
+    throw new Error(`runpodctl failed: ${err.stderr || err.message}`);
   }
-
-  return data as T;
 }
 
 // ── Types ──
 
 export interface PodOptions {
-  gpuTypeIds?: string[];
+  gpuTypeId?: string;
   gpuCount?: number;
   containerDiskInGb?: number;
-  volumeInGb?: number;
   imageName?: string;
   cloudType?: 'SECURE' | 'COMMUNITY';
   name?: string;
   ports?: string[];
-  env?: Array<{ key: string; value: string }>;
-  dockerStartCmd?: string[];
+  env?: Record<string, string>;
+  dockerArgs?: string;
 }
 
 export interface PodInfo {
   id: string;
   desiredStatus: string;
-  publicIp?: string;
-  machineId?: string;
-  runtime: {
-    uptimeInSeconds: number;
-    gpus: { id: string; gpuUtilPercent: number; memoryUtilPercent: number }[];
-    ports: { ip: string; isIpPublic: boolean; privatePort: number; publicPort: number; type: string }[];
-  } | null;
-  machine: {
-    podHostId: string;
-  } | null;
+  runtimeStatus?: string;
+  machine?: {
+    gpuDisplayName?: string;
+    location?: string;
+  };
+  ports?: string[];
+  costPerHr?: number;
+  uptimeSeconds?: number;
 }
 
 // ── API Functions ──
 
 /**
- * Launch a new GPU pod on demand via REST API.
+ * Launch a new GPU pod via runpodctl CLI.
  */
 export async function launchPod(options: PodOptions = {}): Promise<string> {
   const {
-    gpuTypeIds = [process.env.RUNPOD_GPU_TYPE || 'NVIDIA GeForce RTX 3090'],
+    gpuTypeId = process.env.RUNPOD_GPU_TYPE || 'NVIDIA GeForce RTX 3090',
     gpuCount = 1,
     containerDiskInGb = 50,
-    volumeInGb = 0,
     imageName = process.env.RUNPOD_DOCKER_IMAGE || 'runpod/pytorch:1.1.0-cu1281-torch280-ubuntu2204',
-    cloudType = 'COMMUNITY',
+    cloudType = 'SECURE',
     name = 'telosview-processor',
-    ports = ['8080/http'],
+    ports = ['8080/http', '22/tcp'],
     env,
-    dockerStartCmd,
+    dockerArgs,
   } = options;
 
-  const body: Record<string, any> = {
-    cloudType,
-    gpuCount,
-    gpuTypeIds,
-    containerDiskInGb,
-    volumeInGb,
-    imageName,
-    name,
-    ports,
-    supportPublicIp: true,
-  };
+  let args = `pod create`;
+  args += ` --name "${name}"`;
+  args += ` --image "${imageName}"`;
+  args += ` --gpu-id "${gpuTypeId}"`;
+  args += ` --gpu-count ${gpuCount}`;
+  args += ` --container-disk-in-gb ${containerDiskInGb}`;
+  args += ` --cloud-type ${cloudType}`;
+  args += ` --ports "${ports.join(',')}"`;
+  args += ` --ssh`;
+  args += ` -o json`;
 
-  if (env && env.length > 0) {
-    body.env = Object.fromEntries(env.map(e => [e.key, e.value]));
+  if (dockerArgs) {
+    args += ` --docker-args '${dockerArgs}'`;
   }
 
-  if (dockerStartCmd) {
-    body.dockerStartCmd = dockerStartCmd;
+  if (env && Object.keys(env).length > 0) {
+    args += ` --env '${JSON.stringify(env)}'`;
   }
 
-  const pod = await restFetch<{ id: string; desiredStatus: string }>('/pods', {
-    method: 'POST',
-    body: JSON.stringify(body),
-  });
-
+  const output = runPodctl(args);
+  const pod = JSON.parse(output);
   console.log(`[runpod] Launched pod ${pod.id} (status: ${pod.desiredStatus})`);
   return pod.id;
 }
@@ -115,17 +97,20 @@ export async function launchPod(options: PodOptions = {}): Promise<string> {
  * Terminate a running pod.
  */
 export async function terminatePod(podId: string): Promise<void> {
-  await restFetch(`/pods/${podId}`, { method: 'DELETE' });
+  runPodctl(`pod delete ${podId}`);
   console.log(`[runpod] Terminated pod ${podId}`);
 }
 
-/** Get pod status via REST API. */
+/**
+ * Get pod status via CLI.
+ */
 export async function getPodStatus(podId: string): Promise<PodInfo> {
-  return restFetch<PodInfo>(`/pods/${podId}`);
+  const output = runPodctl(`pod get ${podId} -o json`);
+  return JSON.parse(output);
 }
 
 /**
- * Wait for a pod to reach RUNNING status.
+ * Wait for a pod to reach running status with container ready.
  */
 export async function waitForReady(
   podId: string,
@@ -136,16 +121,15 @@ export async function waitForReady(
 
   while (Date.now() < deadline) {
     const pod = await getPodStatus(podId);
-    console.log(`[runpod] Pod ${podId} status: ${pod.desiredStatus} runtime: ${pod.runtime ? 'yes' : 'no'} ip: ${pod.publicIp || 'none'}`);
+    console.log(`[runpod] Pod ${podId} runtimeStatus: ${pod.runtimeStatus || 'unknown'}`);
 
-    if (pod.desiredStatus === 'EXITED' || pod.desiredStatus === 'DEAD') {
-      throw new Error(`Pod ${podId} entered terminal state: ${pod.desiredStatus}`);
+    if (pod.runtimeStatus === 'running') {
+      console.log(`[runpod] Pod ${podId} ready — container running`);
+      return pod;
     }
 
-    // Pod is ready when runtime is non-null (container started, ports available)
-    if (pod.runtime) {
-      console.log(`[runpod] Pod ${podId} ready — runtime active`);
-      return pod;
+    if (pod.runtimeStatus === 'exited' || pod.runtimeStatus === 'dead') {
+      throw new Error(`Pod ${podId} entered terminal state: ${pod.runtimeStatus}`);
     }
 
     await new Promise(resolve => setTimeout(resolve, pollIntervalMs));
@@ -199,5 +183,6 @@ export async function waitForHttpReady(
  * List all pods for the account.
  */
 export async function listPods(): Promise<PodInfo[]> {
-  return restFetch<PodInfo[]>('/pods');
+  const output = runPodctl(`pod list -o json`);
+  return JSON.parse(output);
 }
