@@ -44,6 +44,7 @@ export interface PodOptions {
   name?: string;
   ports?: string;       // e.g. "8080/http"
   env?: Record<string, string>;
+  dockerArgs?: string;  // Startup command passed to the container
 }
 
 export interface PodInfo {
@@ -74,7 +75,7 @@ export interface PodLaunchResult {
  */
 export async function launchPod(options: PodOptions = {}): Promise<string> {
   const {
-    gpuTypeId = process.env.RUNPOD_GPU_TYPE || 'NVIDIA RTX A4000',
+    gpuTypeId = process.env.RUNPOD_GPU_TYPE || 'NVIDIA GeForce RTX 3090',
     gpuCount = 1,
     containerDiskInGb = 50,
     volumeInGb = 0,
@@ -83,6 +84,7 @@ export async function launchPod(options: PodOptions = {}): Promise<string> {
     name = 'telosview-processor',
     ports = '22/tcp,8080/http',
     env = {},
+    dockerArgs,
   } = options;
 
   const mutation = `
@@ -107,6 +109,10 @@ export async function launchPod(options: PodOptions = {}): Promise<string> {
     env: Object.entries(env).map(([key, value]) => ({ key, value })),
   };
 
+  if (dockerArgs) {
+    input.dockerArgs = dockerArgs;
+  }
+
   const data = await graphql<{ podFindAndDeployOnDemand: PodLaunchResult }>(mutation, { input });
 
   const pod = data.podFindAndDeployOnDemand;
@@ -123,7 +129,6 @@ export async function terminatePod(podId: string): Promise<void> {
       podTerminate(input: $input)
     }
   `;
-
   await graphql(mutation, { input: { podId } });
   console.log(`[runpod] Terminated pod ${podId}`);
 }
@@ -133,7 +138,7 @@ export async function terminatePod(podId: string): Promise<void> {
  */
 export async function getPodStatus(podId: string): Promise<PodInfo> {
   const query = `
-    query pod($input: PodInput!) {
+    query pod($input: PodFilter!) {
       pod(input: $input) {
         id
         desiredStatus
