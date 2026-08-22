@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"><title>TelosView Worker</title></head>
+<body>
+<script type="module">
+import { createSession } from '/src/index.js';
+
+window.__worker = {
+  status: 'ready',
+  progress: 0,
+  stage: '',
+  message: '',
+  metrics: null,
+  plyBase64: null,
+  error: null,
+  log: [],
+};
+
+function report(msg) {
+  console.log(msg);
+  window.__worker.log.push(msg);
+}
+
+async function process(jobId) {
+  try {
+    window.__worker.status = 'processing';
+    window.__worker.stage = 'loading';
+    window.__worker.message = 'Fetching extracted JPEG frames...';
+    window.__worker.progress = 20;
+    report(`Fetching frames for job ${jobId}...`);
+
+    const listResponse = await fetch(`/api/projects/${encodeURIComponent(jobId)}/frames`);
+    if (!listResponse.ok) {
+      const body = await listResponse.json().catch(() => ({}));
+      throw new Error(body.error || `Could not list frames (${listResponse.status})`);
+    }
+    const { frames } = await listResponse.json();
+    if (!Array.isArray(frames) || frames.length === 0) {
+      throw new Error('No extracted frames are available');
+    }
+
+    const fileBlobs = [];
+    for (let i = 0; i < frames.length; i++) {
+      const frame = frames[i];
+      const response = await fetch(frame.url);
+      if (!response.ok) throw new Error(`Could not fetch ${frame.name} (${response.status})`);
+      const blob = await response.blob();
+      fileBlobs.push(new File([blob], frame.name, { type: blob.type || 'image/jpeg' }));
+      window.__worker.progress = 20 + ((i + 1) / frames.length) * 5;
+      window.__worker.message = `Loaded ${i + 1}/${frames.length} JPEG frames`;
+    }
+
+    report(`Loaded ${fileBlobs.length} extracted JPEG frames`);
+    window.__worker.stage = 'sfm';
+    window.__worker.message = `Solving camera poses (${fileBlobs.length} frames)...`;
+    window.__worker.progress = 25;
+
+    // Create session
+    const session = createSession({ maxIters: 3000, initTarget: 30000 });
+
+    session.on('stage', (e) => {
+      window.__worker.stage = e.stage;
+      window.__worker.message = `${e.stage}: ${e.detail || ''}`;
+      const pct = 25 + (e.done / Math.max(1, e.total)) * 25;
+      window.__worker.progress = Math.min(50, pct);
+      report(`[stage] ${e.stage} ${e.done}/${e.total} ${e.detail || ''}`);
+    });
+
+    session.on('log', (m) => report(m));
+
+    session.on('metrics', (e) => {
+      window.__worker.stage = 'training';
+      window.__worker.metrics = {
+        iter: e.iter,
+        splats: e.splats,
+        itersPerSec: Math.round(e.itersPerSec),
+        psnrTrain: e.psnrTrain?.toFixed(1) || null,
+      };
+      window.__worker.message = `Iter ${e.iter} · ${e.splats} splats · ${Math.round(e.itersPerSec)} it/s`;
+      window.__worker.progress = 50 + Math.min(45, (e.iter / 3000) * 45);
+    });
+
+    await session.load(fileBlobs);
+
+    report('Running SfM...');
+    await session.solve();
+
+    report('Seeding Gaussians...');
+    await session.seed();
+
+    report('Training...');
+    session.start();
+
+    // Wait for training to complete
+    await new Promise((resolve, reject) => {
+      const timeout = setTimeout(() => reject(new Error('Training timed out (20 min)')), 20 * 60 * 1000);
+      session.on('event', (e) => {
+        if (e.kind === 'train-complete') {
+          clearTimeout(timeout);
+          resolve();
+        }
+      });
+    });
+
+    report('Exporting PLY...');
+    window.__worker.stage = 'export';
+    window.__worker.message = 'Exporting .ply file...';
+    window.__worker.progress = 97;
+
+    const plyBlob = await session.exportPlyBlob();
+    const arrayBuf = await plyBlob.arrayBuffer();
+    const bytes = new Uint8Array(arrayBuf);
+    let binary = '';
+    for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
+    window.__worker.plyBase64 = btoa(binary);
+
+    window.__worker.status = 'done';
+    window.__worker.progress = 100;
+    window.__worker.message = 'Complete';
+    report(`Done! PLY size: ${(arrayBuf.byteLength / 1024 / 1024).toFixed(1)} MB`);
+
+  } catch (err) {
+    window.__worker.status = 'error';
+    window.__worker.error = err.message;
+    window.__worker.message = `Error: ${err.message}`;
+    report(`ERROR: ${err.message}`);
+    console.error(err);
+  }
+}
+
+// Expose process function for Playwright to call
+window.__process = process;
+</script>
+</body>
+</html>

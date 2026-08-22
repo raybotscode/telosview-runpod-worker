@@ -1,0 +1,28 @@
+{
+  "//": "Every gate is a measured baseline minus an explicit margin. Baselines (2026-08-19, RTX-class GPU): synthetic solve f 617.9 vs GT 620 (0.34%), rms ~0.4px, 12/12; synthetic 3k-iter train ~26 dB; truck-42 ATE 0.02% of path; camping-113 ATE 0.17%.",
+  "synthetic-solve": {
+    "cams": 12,
+    "fErrMax": 0.02,
+    "rmsMax": 1.0,
+    "timeoutMin": 4
+  },
+  "synthetic-train": {
+    "cams": 12,
+    "fErrMax": 0.02,
+    "psnrTrainMin": 24,
+    "psnrHoldMin": 22,
+    "timeoutMin": 8
+  },
+  "truck-ate": {
+    "cams": 42,
+    "rmsMax": 1.0,
+    "atePctMax": 0.1,
+    "timeoutMin": 8
+  },
+  "camping-ate": {
+    "cams": 113,
+    "rmsMax": 1.0,
+    "atePctMax": 0.35,
+    "timeoutMin": 12
+  }
+}

@@ -1,0 +1,182 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#0e1112">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" type="image/png" href="icons/icon-192.png">
+<link rel="apple-touch-icon" href="icons/icon-180.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<title>Splat.js — Gaussian splat training in the browser</title>
+<meta name="description" content="Turn photos into a 3D Gaussian splat — camera poses solved and the model trained entirely in your browser on WebGPU. No upload, no server, no install.">
+<meta name="author" content="arrival.space">
+<link rel="canonical" href="https://arrival.space/splat-js">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="arrival.space">
+<meta property="og:title" content="Splat.js — turn photos into a 3D splat, in your browser">
+<meta property="og:description" content="Camera poses solved and a Gaussian splat trained entirely in the browser on WebGPU. No upload, no server, no install.">
+<meta property="og:url" content="https://arrival.space/splat-js">
+<meta property="og:image" content="https://ugc.arrival.space/splatjs/og.jpg">
+<meta property="og:image:width" content="1632">
+<meta property="og:image:height" content="1099">
+<meta property="og:image:alt" content="The Tanks &amp; Temples Truck scene reconstructed as a Gaussian splat in Splat.js">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Splat.js — turn photos into a 3D splat, in your browser">
+<meta name="twitter:description" content="Camera poses solved and a Gaussian splat trained entirely in the browser on WebGPU. No upload, no server, no install.">
+<meta name="twitter:image" content="https://ugc.arrival.space/splatjs/og.jpg">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600&family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,600;12..96,700&family=Spline+Sans+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/app.css">
+</head>
+<body>
+
+<header class="bar">
+  <button class="brand" id="brand" title="What is this?">
+    <span class="brand-mark" aria-hidden="true"><svg viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M29.3953 17.408C29.3974 15.1319 28.8196 12.8928 27.7163 10.9021C26.6131 8.91129 25.0207 7.23447 23.0896 6.02986C21.1584 4.82525 18.9522 4.13258 16.679 4.01722C14.4059 3.90186 12.1409 4.36762 10.0977 5.37053C8.05453 6.37345 6.3006 7.88044 5.00145 9.7493C3.70229 11.6182 2.90077 13.7872 2.67251 16.0518C2.44426 18.3164 2.7968 20.6018 3.69688 22.6923C4.59695 24.7828 6.01487 26.6095 7.81681 28H11.2131L11.8429 26.5165C11.8418 26.5157 11.8406 26.5152 11.8393 26.5149L18.1329 11.6902L14.4801 11.6916L9.00327 24.5643C7.57173 23.167 6.59147 21.373 6.18883 19.4135C5.78619 17.454 5.97963 15.4188 6.7442 13.5702C7.50878 11.7217 8.80946 10.1445 10.4786 9.04187C12.1477 7.93927 14.1089 7.36183 16.1092 7.38397C18.1095 7.4061 20.0573 8.0268 21.7017 9.16607C23.346 10.3053 24.6115 11.911 25.3349 13.776C26.0584 15.641 26.2068 17.68 25.7609 19.6301C25.3149 21.5802 24.2952 23.3521 22.8331 24.7173L19.6872 17.3043L18.6266 14.7649L16.7468 19.1231L20.6179 28H24.1831C25.8052 26.7518 27.1189 25.1475 28.0226 23.3109C28.9263 21.4744 29.396 19.4548 29.3953 17.408Z" fill="currentColor"/><path d="M12.9377 28.0001H20.6179L16.7468 19.123L12.9377 28.0001Z" fill="#73D8D4"/></svg></span>
+    <span class="brand-name">Splat<em>.js</em></span>
+  </button>
+  <button class="tbtn" id="btn-new" hidden title="Train another set"><svg viewBox="0 0 16 16" fill="none" aria-hidden="true" class="ai"><path d="M10.5739 3.43369C10.6368 3.2743 10.7907 3.16986 10.9615 3.16986C11.1327 3.16986 11.2867 3.2743 11.3495 3.43369C11.5065 3.83215 11.6901 4.29694 11.8559 4.71767C12.1643 5.49925 12.783 6.11798 13.5646 6.42636C13.9853 6.59218 14.4501 6.77581 14.8486 6.93322C15.008 6.99559 15.1124 7.14953 15.1124 7.32079C15.1124 7.49156 15.008 7.6455 14.8486 7.70836C14.4501 7.86527 13.9853 8.04891 13.5646 8.21473C12.783 8.52311 12.1643 9.14183 11.8559 9.92341C11.6901 10.3441 11.5065 10.8089 11.3495 11.2079C11.2867 11.3668 11.1327 11.4717 10.9615 11.4717C10.7907 11.4717 10.6368 11.3668 10.5739 11.2079C10.417 10.8089 10.2333 10.3441 10.0675 9.92341C9.75915 9.14183 9.14042 8.52311 8.35884 8.21473C7.9381 8.04891 7.47331 7.86527 7.07436 7.70836C6.91547 7.6455 6.81104 7.49156 6.81104 7.32079C6.81104 7.14953 6.91547 6.99559 7.07436 6.93322C7.47331 6.77581 7.9381 6.59218 8.35884 6.42636C9.14042 6.11798 9.75915 5.49925 10.0675 4.71767C10.2333 4.29694 10.417 3.83215 10.5739 3.43369Z"/><path d="M3.50772 9.48128C3.53297 9.41742 3.59444 9.37555 3.66275 9.37555C3.73135 9.37555 3.79283 9.41742 3.81807 9.48128C3.90153 9.69273 4.00844 9.96389 4.11209 10.2273C4.35265 10.8373 4.83557 11.3202 5.44558 11.5608C5.70901 11.6645 5.98017 11.7714 6.19162 11.8551C6.25548 11.8801 6.29735 11.9415 6.29735 12.0102C6.29735 12.0785 6.25548 12.1399 6.19162 12.1652C5.98017 12.2486 5.70901 12.3556 5.44558 12.4595C4.83557 12.7001 4.35265 13.1827 4.11209 13.7927C4.00844 14.0561 3.90153 14.3273 3.81807 14.5387C3.79283 14.6026 3.73135 14.6445 3.66275 14.6445C3.59444 14.6445 3.53297 14.6026 3.50772 14.5387C3.42427 14.3273 3.31735 14.0561 3.2137 13.7927C2.97314 13.1827 2.49023 12.7001 1.88021 12.4595C1.61678 12.3556 1.34563 12.2486 1.13418 12.1652C1.07032 12.1399 1.02844 12.0785 1.02844 12.0102C1.02844 11.9415 1.07032 11.8801 1.13418 11.8551C1.34563 11.7714 1.61678 11.6645 1.88021 11.5608C2.49023 11.3202 2.97314 10.8373 3.2137 10.2273C3.31735 9.96389 3.42427 9.69273 3.50772 9.48128Z"/><path d="M5.01313 1.35931C5.01313 1.35931 5.09494 1.56644 5.18265 1.78907C5.31826 2.13277 5.59017 2.40468 5.93387 2.54029C6.1565 2.62814 6.36363 2.70981 6.36363 2.70981C6.36363 2.70981 6.1565 2.79147 5.93387 2.87918C5.59017 3.01479 5.31826 3.28684 5.18265 3.6304C5.09494 3.85304 5.01313 4.06016 5.01313 4.06016C5.01313 4.06016 4.93147 3.85304 4.84376 3.6304C4.70815 3.28684 4.43624 3.01479 4.09254 2.87918C3.86991 2.79147 3.66278 2.70981 3.66278 2.70981C3.66278 2.70981 3.86991 2.62814 4.09254 2.54029C4.43624 2.40468 4.70815 2.13277 4.84376 1.78907C4.93147 1.56644 5.01313 1.35931 5.01313 1.35931Z"/></svg>New</button>
+  <span class="grow"></span>
+  <a class="tbtn ghlink" id="gh" target="_blank" rel="noopener"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 .297c-6.63 0-12 5.373-12 12 0 5.303 3.438 9.8 8.205 11.385.6.113.82-.258.82-.577 0-.285-.01-1.04-.015-2.04-3.338.724-4.042-1.61-4.042-1.61C4.422 18.07 3.633 17.7 3.633 17.7c-1.087-.744.084-.729.084-.729 1.205.084 1.838 1.236 1.838 1.236 1.07 1.835 2.809 1.305 3.495.998.108-.776.417-1.305.76-1.605-2.665-.3-5.466-1.332-5.466-5.93 0-1.31.465-2.38 1.235-3.22-.135-.303-.54-1.523.105-3.176 0 0 1.005-.322 3.3 1.23.96-.267 1.98-.399 3-.405 1.02.006 2.04.138 3 .405 2.28-1.552 3.285-1.23 3.285-1.23.645 1.653.24 2.873.12 3.176.765.84 1.23 1.91 1.23 3.22 0 4.61-2.805 5.625-5.475 5.92.42.36.81 1.096.81 2.22 0 1.606-.015 2.896-.015 3.286 0 .315.21.69.825.57C20.565 22.092 24 17.592 24 12.297c0-6.627-5.373-12-12-12"/></svg>Source</a>
+  </header>
+
+<footer class="dock" id="dock"></footer>
+
+<main class="stage" id="stage" data-cursor="grab">
+  <canvas id="cv"></canvas>
+
+  <div class="hud" id="hud"></div>
+
+  <div class="controls" id="controls" hidden></div>
+
+  <div class="card-start" id="start" hidden>
+    <button class="card-x" id="card-x" hidden aria-label="Keep the current run">&times;</button>
+
+    <p class="eyebrow">In-browser 3D capture</p>
+    <h1>Turn photos into a splat</h1>
+    <p class="origin">Drop in 20–200 overlapping photos of one place, capture them
+      right here, or pick a preset below. The camera solve, the training and
+      the export all run right here in this tab.</p>
+
+    <div class="upload" id="upload">
+      <div class="upload-btns"><label class="btn btn-accent">Choose photos<input type="file" id="file-input" multiple accept="image/*" hidden></label><button class="btn btn-outline" id="btn-record" hidden><svg viewBox="0 0 24 24" class="capicon" aria-hidden="true"><path d="M4.5 7.5h2.6l1.5-2h6.8l1.5 2h2.6a1.4 1.4 0 0 1 1.4 1.4v8.6a1.4 1.4 0 0 1-1.4 1.4h-15a1.4 1.4 0 0 1-1.4-1.4V8.9a1.4 1.4 0 0 1 1.4-1.4z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><circle cx="12" cy="12.7" r="3.3" fill="none" stroke="currentColor" stroke-width="1.6"/></svg>Capture</button></div>
+    </div>
+
+    <div class="orline"><span>Presets</span></div>
+
+    <div class="setpick" id="setpick"></div>
+    <p class="setdesc" id="set-desc" hidden></p>
+
+    <div class="startrow">
+      <button class="btn btn-accent big" id="btn-go">Start training</button>
+      <button class="iconbtn setgear" id="btn-settings" aria-expanded="false" title="Training settings" aria-label="Training settings"><svg viewBox="0 0 24 24" class="gear" aria-hidden="true"><circle cx="12" cy="12" r="3.2"/><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.87l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.7 1.7 0 0 0-1.87-.34 1.7 1.7 0 0 0-1 1.55V21a2 2 0 1 1-4 0v-.09a1.7 1.7 0 0 0-1-1.55 1.7 1.7 0 0 0-1.87.34l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.7 1.7 0 0 0 .34-1.87 1.7 1.7 0 0 0-1.55-1H3a2 2 0 1 1 0-4h.09a1.7 1.7 0 0 0 1.55-1 1.7 1.7 0 0 0-.34-1.87l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.7 1.7 0 0 0 1.87.34h.09a1.7 1.7 0 0 0 1-1.55V3a2 2 0 1 1 4 0v.09a1.7 1.7 0 0 0 1 1.55 1.7 1.7 0 0 0 1.87-.34l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.7 1.7 0 0 0-.34 1.87v.09a1.7 1.7 0 0 0 1.55 1H21a2 2 0 1 1 0 4h-.09a1.7 1.7 0 0 0-1.55 1z"/></svg><span class="chev">&#8250;</span></button>
+    </div>
+
+    <div class="settings" id="settings" hidden>
+      <div class="setrow setrow-range" id="row-count" hidden title="How many of the set's images to use. More images, longer solve — pair matching grows with the square of the count."><label for="set-count">Images</label>
+        <input id="set-count" type="range" min="2" step="1" value="42">
+        <button class="countv" id="set-count-v" title="Use every image">42 / 251</button></div>
+      <div class="setrow" title="One knob for the rows below. Draft is quick and light, Showcase trains long at the largest splat budget. Editing a row below shows Custom."><label for="set-q">Quality</label>
+        <select id="set-q">
+          <option value="draft">Draft</option>
+          <option value="standard">Standard</option>
+          <option value="high">High</option>
+          <option value="showcase">Showcase</option>
+          <option value="custom" hidden>Custom</option>
+        </select></div>
+      <div class="setrow" title="Largest image dimension the photos are downscaled to for training. Auto picks from image size, count and GPU memory."><label for="set-res">Training resolution</label>
+        <select id="set-res">
+          <option value="">Auto</option>
+          <option value="480">480 px</option>
+          <option value="640">640 px</option>
+          <option value="960">960 px</option>
+          <option value="1280">1280 px</option>
+        </select></div>
+      <div class="setrow" title="Render grid relative to the training resolution. 2× removes edge ringing at sharp viewing sizes (~1.7× slower); 0.5× quarters the raster work."><label for="set-buf">Working buffer</label>
+        <select id="set-buf">
+          <option value="0.5">0.5×</option>
+          <option value="1">1×</option>
+          <option value="2">2×</option>
+        </select></div>
+      <div class="setrow" title="View-dependent colour detail. 0 = flat colours (faster, smaller file); 2 = full."><label for="set-sh">Spherical harmonics</label>
+        <select id="set-sh">
+          <option value="0">0</option>
+          <option value="1">1</option>
+          <option value="2">2</option>
+        </select></div>
+      <div class="setrow" title="Splat budget the model grows toward. More splats, finer detail — and a larger export file and more GPU memory. Auto sizes from the solve."><label for="set-splats">Splats</label>
+        <select id="set-splats">
+          <option value="">Auto</option>
+          <option value="300000">300,000</option>
+          <option value="600000">600,000</option>
+          <option value="1000000">1,000,000</option>
+        </select></div>
+      <div class="setrow" title="Training cycles. A finished run can always continue with +10,000 more."><label for="set-iters">Cycles</label>
+        <select id="set-iters">
+          <option value="10000">10,000</option>
+          <option value="">20,000</option>
+          <option value="40000">40,000</option>
+          <option value="100000">100,000</option>
+        </select></div>
+    </div>
+  </div>
+</main>
+
+<div class="strip" id="strip"></div>
+
+<section class="sheet" id="details" hidden>
+  <div class="sheet-head">
+    <div>
+      <h2>Details</h2>
+      <p id="d-sub">—</p>
+    </div>
+    <div class="sheet-tools">
+      <span id="d-export"></span>
+      <button class="sheet-x" id="d-close" aria-label="Close">&times;</button>
+    </div>
+  </div>
+  <div class="sheet-body">
+    <div class="sheet-row">
+      <div class="sheet-vis">
+        <div class="seg" id="d-seg"></div>
+        <button class="d-nav" id="d-prev" hidden aria-label="Previous photo">&#8249;</button>
+        <button class="d-nav" id="d-next" hidden aria-label="Next photo">&#8250;</button>
+        <canvas id="d-cv"></canvas>
+        <canvas id="d-chart" hidden></canvas>
+        <pre id="d-perf" class="perfpre" hidden></pre>
+        <p class="cap" id="d-cap">—</p>
+      </div>
+      <div class="sheet-txt" id="d-txt"></div>
+    </div>
+  </div>
+</section>
+
+<section class="about" id="about" hidden>
+  <div class="about-card">
+    <button class="card-x" id="about-x" aria-label="Close">&times;</button>
+    <p class="eyebrow">Splat.js</p>
+    <h2>Gaussian splat training, in a browser tab</h2>
+    <p>Give it overlapping photographs of a place and the whole pipeline runs here:
+       landmarks are found and matched across the photos, the camera positions are
+       solved for, those points become Gaussian splats, and the splats are trained
+       against your photographs until the render matches them. What comes out is a
+       standard <code>.ply</code> that opens in any splat viewer.</p>
+    <div class="about-note">
+      <b>Nothing is uploaded.</b>
+      <span>No server, no cloud, no queue, no account. Your photographs are decoded
+        in this page and never leave your machine — there is nowhere for them to be
+        sent, and nothing is stored.</span>
+    </div>
+    <div class="about-foot">
+      <a id="about-gh" target="_blank" rel="noopener">Source on GitHub ↗</a>
+      <span>Made by Stratum1 GmbH</span>
+    </div>
+  </div>
+</section>
+
+<script type="module" src="js/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,10 @@
+node_modules/
+jobs/
+uploads/
+output/
+server/frames/
+scratch/
+*.mp4
+*.mov
+*.webm
+*.ply

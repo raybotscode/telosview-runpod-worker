@@ -1,0 +1,712 @@
+/* Splat.js v2 — the tech-demo cut. Same palette and type as v1
+   (imported), a much smaller frame around one stage. */
+
+@import url('base.css');
+
+body {
+  display: grid;
+  /* minmax(0,1fr), not 1fr: the filmstrip's row of thumbnails would otherwise
+     size the whole column to its own max-content width */
+  grid-template-columns: minmax(0, 1fr);
+  /* header · status+curve · stage · the photographs, which stay at the bottom */
+  grid-template-rows: 52px auto minmax(0, 1fr) auto;
+  height: 100dvh;
+  overflow: hidden;
+}
+
+/* ── bar ─────────────────────────────────────────────────────────────────── */
+
+.bar {
+  display: flex; align-items: center; gap: 14px; padding: 0 16px;
+  border-bottom: 1px solid var(--line);
+  background: linear-gradient(var(--ink-2), var(--ink));
+}
+.bar .grow { flex: 1; }
+.bar .brand { margin-right: 4px; }
+#btn-new {
+  display: inline-flex; align-items: center; gap: 7px;
+  color: var(--paper); border-color: var(--line-2);
+}
+/* New and Source: no pills — a quiet divider, then icon + word */
+#btn-new, #gh {
+  border: 0; background: none; border-radius: 8px;
+  padding: 6px 8px; margin-left: 14px;
+  position: relative; color: var(--muted);
+}
+#btn-new::before {
+  content: ''; position: absolute; left: -14px; top: 50%;
+  transform: translateY(-50%);
+  width: 1px; height: 18px; background: var(--line-2);
+}
+#btn-new:hover, #gh:hover { color: var(--accent); }
+#btn-new .ai {
+  width: 14px; height: 14px; flex: none;
+  fill: none; stroke: currentColor; stroke-width: 1.75;
+  stroke-linecap: round; stroke-linejoin: round;
+}
+
+/* ── touch ownership ─────────────────────────────────────────────────────────
+   The page must never react on its own: no pinch-zoom, no rubber-banding, no
+   stray scrolling. Touches on the stage belong entirely to the app (pinch /
+   two-finger move become camera controls); the filmstrip and the details
+   sheet keep their own panning. */
+html, body { touch-action: pan-x pan-y; overscroll-behavior: none; }
+body { overflow: hidden; }
+.stage, .camrec { touch-action: none; }
+
+/* ── stage ───────────────────────────────────────────────────────────────── */
+
+/* v1 places .stage / .strip inside a named-area grid; v2 owns its own layout.
+   Rows are pinned explicitly: the status bar is display:none when a run is not
+   in progress, and without this the stage and the filmstrip would each shift up
+   a row and swap their auto/1fr sizing. */
+.bar   { grid-area: 1 / 1; }
+.dock  { grid-area: 2 / 1; }
+.stage { grid-area: 3 / 1; }
+.strip { grid-area: 4 / 1; }
+
+.stage {
+  position: relative; display: block; overflow: hidden;
+  background: var(--stage); min-height: 0;
+}
+.stage canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+.stage[data-cursor="loupe"] { cursor: none; }
+.stage[data-cursor="grab"] { cursor: grab; }
+.stage[data-cursor="grab"]:active { cursor: grabbing; }
+.stage[data-cursor="swipe"] { cursor: ew-resize; }
+
+.controls {
+  position: absolute; z-index: 3; right: 14px; top: 12px;
+  display: flex; align-items: center; gap: 6px; flex-wrap: wrap; justify-content: flex-end;
+}
+/* one row, one height — chip, Train button and export share the same pill;
+   borders kept quiet, the frosted fill does the separating */
+.controls .statchip, .controls .cbtn { height: 32px; }
+.controls .iconbtn { width: 32px; height: 32px; }
+.controls .statchip, .controls .cbtn, .controls .iconbtn { border-color: var(--line); }
+.controls .iconbtn { color: var(--paper); }   /* icons speak like the Train text */
+.controls .statchip i { color: var(--paper); }   /* Details too */
+/* hover: the fill breathes, the border stays put */
+.controls .statchip:hover, .controls .cbtn:hover, .controls .iconbtn:hover {
+  border-color: var(--line);
+  background: rgba(36, 44, 45, .85);
+}
+.controls .seg { background: rgba(7, 9, 9, .82); backdrop-filter: blur(4px); }
+
+/* start card, centred on the frames it is about to chew through */
+.card-start {
+  /* fixed: centred in the WINDOW, free to overlay the filmstrip (and on a
+     phone the header) instead of being squeezed into the stage row */
+  position: fixed; z-index: 40; inset: 0; margin: auto;
+  width: min(600px, calc(100% - 48px)); height: max-content;
+  max-height: calc(100% - 20px); overflow-y: auto;
+  touch-action: pan-y;   /* its own scroll works despite the stage's none */
+  padding: 58px 30px 26px; text-align: center;   /* the top gap is the × its own row */
+  background: rgba(14, 17, 18, .9); backdrop-filter: blur(12px);
+  border: 1px solid var(--line-2); border-radius: 16px;
+  box-shadow: var(--shadow);
+}
+/* phones: the card fills everything under the top bar — no border, no
+   chrome, content centred while it fits, scrolling from the top once not */
+@media (max-width: 640px) {
+  .card-start {
+    inset: 0; top: 52px; margin: 0; width: 100%;
+    height: calc(100% - 52px); max-height: calc(100% - 52px);
+    border: 0; border-radius: 0;
+    display: grid; align-content: safe center;
+  }
+}
+
+/* short screens: tighten the card so Start stays in reach without scrolling */
+@media (max-height: 700px) {
+  .card-start { padding-top: 36px; }
+  .card-start h1 { font-size: 25px; }
+  .card-start .origin { display: none; }
+  .upload { padding: 10px 0 8px; margin-bottom: 10px; }
+}
+
+.card-x {
+  position: absolute; top: 12px; right: 14px;
+  width: 36px; height: 36px; border-radius: 50%;
+  color: var(--dim); font: 300 27px/1 var(--ui);
+}
+.card-x:hover { color: var(--paper); background: var(--panel-2); }
+
+.upload {
+  display: flex; align-items: center; gap: 18px; text-align: left;
+  padding: 18px 0 14px; margin-bottom: 16px;
+  border: none; border-radius: 12px;
+}
+.upload-txt { flex: 1; }
+.upload b { display: block; font: 600 15px var(--ui); }
+.upload span { display: block; margin-top: 2px; font-size: 12.5px; color: var(--muted); }
+.card-start.drop .upload { background: var(--accent-14); }
+
+.orline {
+  display: flex; align-items: center; gap: 12px;
+  margin: 0 0 14px; color: var(--dim);
+  font: 400 11px var(--mono); letter-spacing: .1em; text-transform: uppercase;
+}
+.orline::before, .orline::after { content: ''; flex: 1; height: 1px; background: var(--line); }
+
+.btn-outline {
+  background: none; border: 1px solid var(--accent); color: var(--accent);
+}
+.btn-outline:hover { background: var(--accent-14); border-color: #5ee7d6; color: #5ee7d6; }
+
+.card-start .eyebrow { margin: 0 0 6px; }
+.card-start h1 { font: 700 32px/1.05 var(--display); letter-spacing: -.02em; margin-bottom: 10px; }
+.card-start p { margin: 0; color: var(--muted); font-size: 14px; line-height: 1.55; }
+.card-start .origin { max-width: 46ch; margin: 0 auto; }
+.card-start .runs { margin: 16px auto 20px; max-width: 44ch; color: var(--dim); font-size: 13px; }
+.card-start .fine { margin: 14px 0 0; font-size: 12.5px; color: var(--dim); }
+.btn.big { padding: 12px 24px; font-size: 15px; }
+.linkish { color: var(--accent); text-decoration: underline; text-underline-offset: 2px; padding: 0; font: inherit; }
+
+.srclinks { margin-top: 9px !important; display: flex; gap: 14px; justify-content: center; }
+.srclinks:empty { display: none; }
+.srclinks a {
+  font: 400 12px var(--mono); color: var(--accent);
+  text-decoration: underline; text-underline-offset: 3px;
+}
+.srclinks a:hover { color: #5ee7d6; }
+.srclinks a::after { content: ' ↗'; text-decoration: none; opacity: .6; }
+
+/* the set chooser: ONE row, slides horizontally when the room runs out.
+   Spare width centres the group: auto margins on the ends resolve to 0
+   under overflow, so scrolling stays intact (justify-content would clip). */
+.setpick {
+  display: flex; gap: 6px; overflow-x: auto;
+  scrollbar-width: none;   /* rows swipe/drag — no bar (see dragScroll) */
+  touch-action: pan-x pan-y;
+  /* top padding = headroom for the selected tile's scale-up (transforms
+     don't grow layout, but the scroll box would clip them) */
+  padding: 4px 0 12px; margin-bottom: 14px; border-bottom: 1px solid var(--line);
+}
+.setpick > :first-child { margin-left: auto; }
+.setpick > :last-child { margin-right: auto; }
+.setpick button { flex: 0 0 92px; position: relative; }
+/* the last-capture tile carries a badge — its thumbnail can look exactly
+   like a preset's when the capture WAS of that scene */
+.setpick .yours {
+  position: absolute; top: 9px; right: 9px; z-index: 1;
+  padding: 1px 6px 2px; border-radius: 5px;
+  background: rgba(47, 212, 193, .92); color: #04231f;
+  font: 600 9px var(--mono); font-style: normal;
+  letter-spacing: .06em; text-transform: uppercase;
+}
+.setpick button {
+  padding: 4px 4px 5px; border: 1px solid transparent; border-radius: 12px;
+  overflow: hidden; text-align: center;
+  transition: background .14s, transform .14s ease;
+}
+.setpick img, .setpick .ph {
+  display: block; width: 100%; aspect-ratio: 16 / 10; object-fit: cover;
+  background: var(--panel-2); opacity: .6; transition: opacity .14s;
+  border-radius: 8px;
+}
+.setpick span {
+  display: block; margin-top: 5px;
+  font: 500 11px var(--mono); color: var(--dim); letter-spacing: .02em;
+}
+.setpick button:hover { background: var(--panel-2); }
+.setpick button:hover img { opacity: .85; }
+/* selection reads as presence, not a frame: a touch larger, tinted ground */
+.setpick button[aria-pressed="true"] { background: var(--accent-14); transform: scale(1.05); }
+.setpick button[aria-pressed="true"] img { opacity: 1; }
+.setpick button[aria-pressed="true"] span { color: var(--paper); }
+
+/* ── filmstrip ───────────────────────────────────────────────────────────── */
+
+.strip { display: block; border-top: 1px solid var(--line); background: var(--ink-2); }
+.strip:empty { display: none; }
+.strip-scroll { display: flex; gap: 4px; padding: 7px 12px; overflow-x: auto; scrollbar-width: none; }
+.setpick::-webkit-scrollbar, .strip-scroll::-webkit-scrollbar { display: none; }
+.setpick img, .strip-scroll img { -webkit-user-drag: none; user-select: none; }
+.strip .frame { width: 62px; }
+
+/* ── dock ────────────────────────────────────────────────────────────────── */
+
+.dock {
+  border-bottom: 1px solid var(--line); background: var(--panel);
+  padding: 10px 16px 12px; min-height: 0;
+}
+.dock:empty { display: none; }
+
+.dock-train {
+  display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 18px; align-items: center;
+  position: relative; z-index: 5;   /* the stop-and-keep chip overhangs the stage */
+}
+.dock-prep { display: grid; grid-template-columns: minmax(0, 1fr); align-items: center; }
+
+/* the stage sequence doubles as the header: the active beat wears the title
+   style, the rest queue beside it in the small mono of the old side list */
+.prep-stages {
+  display: flex; gap: 14px; align-items: baseline;
+  font: 400 12px var(--mono); color: var(--dim);
+  margin-bottom: 3px;
+}
+.prep-stages span { transition: color .2s; }
+.prep-stages [data-on="1"] { font: 500 15px var(--ui); color: var(--accent); }
+.prep-stages [data-on="done"] { color: var(--accent-30); }
+.prep-sub { font: 400 12px var(--mono); color: var(--dim); }
+.prep-meter { height: 5px; background: var(--panel-2); border-radius: var(--pill); overflow: hidden; margin-top: 9px; }
+.prep-meter i { display: block; height: 100%; background: var(--accent); transition: width .12s linear; }
+
+/* phones: both docks stack — side-by-side columns squeezed the chart to a
+   sliver, the play button to an egg, and the stage label to one word a line.
+   The stage gets squarer; that is the right trade on a portrait screen. */
+@media (max-width: 720px) {
+  .dock-train { grid-template-columns: minmax(0, 1fr) auto; row-gap: 10px; }
+  .dock-train .tcontrols { grid-row: 1; grid-column: 1; }
+  .dock-train .tscores { grid-row: 1; grid-column: 2; gap: 16px; align-self: center; }
+  .dock-train .chartwrap { grid-row: 2; grid-column: 1 / -1; height: 72px; }
+
+  .dock-prep { gap: 10px; }
+  .prep-stages { flex-wrap: wrap; gap: 5px 13px; }
+}
+
+/* ── details sheet ───────────────────────────────────────────────────────── */
+
+.sheet {
+  position: fixed; inset: 0; z-index: 30; overflow-y: auto;
+  background: var(--ink); animation: rise .18s ease-out;
+}
+@keyframes rise { from { transform: translateY(14px); opacity: 0; } }
+.sheet[hidden] { display: none; }
+.sheet-head {
+  position: sticky; top: 0; z-index: 2;
+  display: flex; align-items: flex-start; justify-content: space-between; gap: 20px;
+  padding: 22px 28px 16px; border-bottom: 1px solid var(--line);
+  background: linear-gradient(var(--ink) 70%, transparent);
+}
+.sheet-x {
+  flex: none; width: 38px; height: 38px; border-radius: 50%;
+  color: var(--dim); font: 300 28px/1 var(--ui);
+}
+.sheet-x:hover { color: var(--paper); background: var(--panel-2); }
+
+.sheet-head h2 { font: 700 26px var(--display); letter-spacing: -.02em; }
+.sheet-head p { margin: 5px 0 0; color: var(--dim); font: 400 13px var(--mono); }
+.sheet-body { padding: 8px 28px 48px; max-width: 1180px; margin: 0 auto; }
+
+.sheet-row {
+  display: grid; grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr);
+  gap: 30px; padding: 26px 0; border-bottom: 1px solid var(--line);
+}
+.sheet-row:last-child { border-bottom: 0; }
+.sheet-vis { min-width: 0; position: relative; }
+
+/* flip through the photos on the Landmarks tab — the filmstrip is covered */
+.d-nav {
+  position: absolute; top: 50%; transform: translateY(-50%); z-index: 2;
+  width: 40px; height: 40px; border-radius: 50%;
+  border: 1px solid var(--line-2); color: var(--paper);
+  background: rgba(7, 9, 9, .7); backdrop-filter: blur(4px);
+  font: 300 24px/1 var(--ui); padding-bottom: 3px;
+}
+.d-nav:hover { border-color: var(--muted); background: rgba(7, 9, 9, .9); }
+#d-prev { left: 10px; }
+#d-next { right: 10px; }
+.sheet-vis canvas {
+  display: block; width: 100%; aspect-ratio: 16 / 9;
+  background: var(--stage); border: 1px solid var(--line); border-radius: var(--r);
+}
+.seg-title, .sheet-vis .seg { margin-bottom: 10px; }
+.seg-title { font: 500 10.5px var(--mono); letter-spacing: .14em; text-transform: uppercase; color: var(--dim); }
+.sheet-vis .seg { display: inline-flex; }
+.cap { margin: 9px 0 0; font-size: 12.5px; color: var(--dim); line-height: 1.5; }
+
+.sheet-txt h3 { font: 600 18px var(--display); margin-bottom: 8px; }
+.sheet-txt p { margin: 0 0 12px; color: var(--muted); font-size: 13.5px; line-height: 1.6; }
+.sheet-txt .grp { padding: 6px 0 0; }
+
+@media (max-width: 900px) {
+  .sheet-row { grid-template-columns: minmax(0, 1fr); }
+  .tag { display: none; }
+}
+
+/* ── stage controls: reveal · details · export ───────────────────────────── */
+
+.cbtn {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 5px 13px; border-radius: var(--pill);
+  border: 1px solid var(--line-2); color: var(--paper); font-size: 12.5px;
+  background: rgba(7, 9, 9, .82); backdrop-filter: blur(4px);
+}
+.cbtn:hover { border-color: var(--muted); }
+.cbtn.accent {
+  background: var(--accent); border-color: var(--accent);
+  color: #04231f; font-weight: 600;
+}
+.cbtn.accent:hover { background: #5ee7d6; border-color: #5ee7d6; }
+/* same height as the pills beside it; the icon is the only coloured part */
+.iconbtn {
+  display: inline-grid; place-content: center;
+  width: 31px; height: 31px; border-radius: 50%;
+  border: 1px solid var(--line-2); color: var(--accent);
+  background: rgba(7, 9, 9, .82); backdrop-filter: blur(4px);
+}
+.iconbtn:hover { border-color: var(--muted); color: #5ee7d6; }
+.iconbtn .pl { width: 18px; height: 18px; fill: currentColor; }
+.iconbtn .dl {
+  width: 15px; height: 15px;
+  fill: none; stroke: currentColor; stroke-width: 2.5;
+  stroke-linecap: round; stroke-linejoin: round;
+}
+
+.sheet-tools { display: flex; align-items: center; gap: 12px; }
+.sheet-tools .iconbtn { color: var(--paper); }
+
+.statchip {
+  display: inline-flex; align-items: center; gap: 13px;
+  padding: 6px 13px; border-radius: var(--pill);
+  border: 1px solid var(--line-2); color: var(--dim);
+  background: rgba(7, 9, 9, .82); backdrop-filter: blur(4px);
+  font: 400 12px var(--mono);
+}
+.statchip b { color: var(--paper); font-weight: 500; }
+.statchip i { font-style: normal; color: var(--accent); }
+.statchip:hover { border-color: var(--accent); }
+
+.exportwrap { position: relative; }
+
+.menu {
+  position: absolute; right: 0; top: calc(100% + 8px); z-index: 20;
+  min-width: 268px; padding: 6px;
+  background: var(--panel-2); border: 1px solid var(--line-2); border-radius: 12px;
+  box-shadow: var(--shadow);
+  display: flex; flex-direction: column; gap: 2px;
+}
+.menu button { text-align: left; padding: 9px 12px; border-radius: 8px; }
+.menu button:hover { background: rgba(255, 255, 255, .055); }
+.menu b { display: block; font: 600 13.5px var(--ui); color: var(--paper); }
+.menu span { display: block; margin-top: 2px; font: 400 11.5px var(--mono); color: var(--dim); }
+
+
+
+/* ── what this is ────────────────────────────────────────────────────────── */
+
+.brand { padding: 0; cursor: pointer; }
+.brand:hover .brand-name { color: #fff; }
+.brand:hover .brand-mark { color: #5ee7d6; }
+
+.about {
+  position: fixed; inset: 0; z-index: 50;
+  display: grid; place-items: center; padding: 24px;
+  background: rgba(8, 10, 11, .72); backdrop-filter: blur(4px);
+  animation: rise .16s ease-out;
+}
+.about[hidden] { display: none; }
+
+.about-card {
+  position: relative; width: min(560px, 100%);
+  padding: 34px 34px 26px;
+  background: var(--panel); border: 1px solid var(--line-2); border-radius: 16px;
+  box-shadow: var(--shadow);
+}
+.about-card h2 { font: 700 26px/1.15 var(--display); letter-spacing: -.02em; margin: 6px 0 14px; }
+.about-card p { margin: 0; color: var(--muted); font-size: 14px; line-height: 1.6; }
+.about-card code {
+  font: 400 12.5px var(--mono); color: var(--paper);
+  background: var(--panel-2); padding: 1px 5px; border-radius: 4px;
+}
+
+.about-note {
+  margin: 18px 0 20px; padding: 13px 15px;
+  border: 1px solid var(--accent-30); border-radius: 12px; background: var(--accent-14);
+}
+.about-note b { display: block; font: 600 13.5px var(--ui); color: var(--accent); }
+.about-note span { display: block; margin-top: 3px; font-size: 13px; color: var(--muted); line-height: 1.55; }
+
+.about-foot {
+  display: flex; align-items: baseline; justify-content: space-between; gap: 16px;
+  padding-top: 16px; border-top: 1px solid var(--line);
+  font: 400 12px var(--mono); color: var(--dim);
+}
+.about-foot a { color: var(--accent); text-decoration: underline; text-underline-offset: 3px; }
+.about-foot a:hover { color: #5ee7d6; }
+
+/* run-length hint on the start card */
+.srclinks .approx { color: var(--dim, #6b7877); margin-left: 10px; font-size: 12px; }
+
+/* training settings: a bare name-value table, folded away below Start */
+.settings { margin: 16px auto 2px; max-width: 320px; text-align: left; }
+.setrow {
+  display: flex; align-items: center; justify-content: space-between; gap: 16px;
+  padding: 4px 0;
+}
+.setrow label { font: 400 12.5px var(--ui); color: var(--muted); }
+.setrow select, .setrow input[type="number"] {
+  width: 104px; padding: 4px 8px; text-align: right; text-align-last: right;
+  font: 500 12px var(--mono); color: var(--paper);
+  background: var(--panel-2); border: 1px solid transparent; border-radius: 8px;
+}
+.setrow select:hover, .setrow input[type="number"]:hover { border-color: var(--line-2); }
+.setrow select:focus, .setrow input[type="number"]:focus { border-color: var(--accent-30); outline: none; }
+
+/* the image-count row: a slider, and the value doubles as "use all" */
+.setrow-range input[type="range"] {
+  flex: 1; min-width: 0; margin: 0 2px; accent-color: var(--accent);
+}
+.countv {
+  flex: none; min-width: 66px; padding: 2px 4px; text-align: right;
+  font: 500 12px var(--mono); color: var(--paper); border-radius: 6px;
+}
+.countv:hover { color: var(--accent); }
+/* Start sits on the card's true centre line; the gear hangs off its right */
+.startrow { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; }
+.startrow #btn-go { grid-column: 2; }
+.startrow .setgear { grid-column: 3; justify-self: start; margin-left: 10px; }
+/* same height as .btn.big beside it; the chevron flips down when open */
+.setgear {
+  display: inline-flex; align-items: center; gap: 5px;
+  width: auto; height: 47px; padding: 0 12px 0 14px;
+  border: 0; border-radius: var(--pill); color: var(--muted);
+  background: none; backdrop-filter: none;
+}
+.setgear:hover { background: var(--panel-2); }
+.setgear:hover { color: var(--accent); }
+/* disabled: same voice as the disabled Start beside it */
+.setgear[disabled] {
+  background: transparent; color: var(--dim);
+  backdrop-filter: none; pointer-events: none;
+}
+.setgear .gear {
+  width: 18px; height: 18px; fill: none; stroke: currentColor;
+  stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round;
+}
+.setgear .chev {
+  font: 400 17px/1 var(--ui); transition: transform .16s ease;
+}
+.setgear[aria-expanded="true"] .chev { transform: rotate(90deg); }
+
+
+/* the run length, inline after the live cycle count */
+.tmeta-max { font: 400 11px var(--mono); color: var(--dim); }
+
+/* the state header floats above the numbers WITHOUT moving them (out of
+   flow); phones have no headroom above the controls row — hidden there */
+.tmeta { position: relative; }
+/* the state title floats above the numbers WITHOUT moving them; the
+   stop-and-keep action hangs below the pause circle (also out of flow) */
+.t-title {
+  position: absolute; bottom: calc(100% + 9px); left: 0;
+  font: 500 15px var(--ui); color: var(--accent); white-space: nowrap;
+}
+.playwrap { position: relative; display: inline-flex; }
+#t-finish {
+  position: absolute; top: calc(100% + 5px); left: 0;
+  padding: 3px 10px;
+  white-space: nowrap; z-index: 6;         /* floats over the stage edge */
+  background: var(--panel);
+}
+/* the pause circle breathes — enough on the left that the stop-and-keep
+   chip below it clears the window edge */
+.dock-train .play { margin: 0 10px 0 16px; }
+/* the phone's state title lives on the right, before the dB score */
+.t-title-m { display: none; }
+/* phones: no headroom above the controls — the state moves to the right
+   before the dB score, and stop-and-keep sits inline next to the pause */
+@media (max-width: 720px) {
+  .t-title { display: none; }
+  .t-title-m { display: block; align-self: center; font: 500 14px var(--ui); color: var(--accent); }
+  #t-finish { position: static; transform: none; margin-left: 8px; }
+  .dock-train .play { margin: 0; }
+}
+
+/* the upload dialog + the result link chip */
+.upcard {
+  position: absolute; left: 50%; top: 38%; transform: translate(-50%, -50%);
+  display: flex; flex-direction: column; gap: 12px;
+  width: min(340px, 86%); padding: 18px 18px 14px;
+  background: rgba(10, 13, 13, .96); border: 1px solid var(--line-2);
+  border-radius: 16px; backdrop-filter: blur(8px); z-index: 30;
+}
+.upcard b { font: 600 14px var(--sans, system-ui); color: var(--paper); }
+.upcard input {
+  padding: 9px 12px; font: 500 13px var(--mono); color: var(--paper);
+  background: rgba(7, 9, 9, .8); border: 1px solid var(--line-2);
+  border-radius: 10px; outline: none;
+}
+.upcard input:focus { border-color: var(--accent-30); }
+.upcard-row { display: flex; gap: 8px; justify-content: flex-end; }
+
+/* the ?perf benchmark summary */
+#perfcard { width: min(560px, 92%); }
+/* the Timing tab: the log takes the canvas's slot in the details sheet */
+#d-perf { aspect-ratio: 16 / 9; max-height: none; }
+#d-perf[hidden] { display: none; }
+.tabbtns { display: flex; gap: 8px; margin-top: 14px; flex-wrap: wrap; }
+.perfpre {
+  margin: 0; padding: 10px 12px; max-height: min(320px, 42vh); overflow: auto;
+  font: 400 10.5px/1.55 var(--mono); color: var(--muted); text-align: left;
+  white-space: pre; background: rgba(7, 9, 9, .8);
+  border: 1px solid var(--line); border-radius: 10px;
+}
+.chip a { color: inherit; text-decoration: underline; }
+
+/* the in-app camera recorder */
+.camrec {
+  position: fixed; inset: 0; z-index: 60; background: #000;
+  display: flex; flex-direction: column;
+}
+.camrec video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.camrec-top { position: absolute; top: 14px; left: 14px; }
+.camrec-hint {
+  position: absolute; left: 50%; bottom: 108px; transform: translateX(-50%);
+  padding: 6px 14px; border-radius: var(--pill);
+  background: rgba(7, 9, 9, .7); backdrop-filter: blur(4px);
+  font: 400 12px var(--mono); color: var(--muted); white-space: nowrap;
+}
+.camrec-hint b { color: var(--accent); }
+.camrec-row {
+  position: absolute; left: 0; right: 0; bottom: 26px;
+  display: grid; grid-template-columns: 1fr auto 1fr; align-items: center;
+  padding: 0 22px;
+}
+
+.camrec-time { justify-self: end; font: 500 13px var(--mono); color: var(--paper); }
+.camrec-btn {
+  position: relative; width: 64px; height: 64px; border-radius: 50%;
+  cursor: pointer; padding: 0;
+  border: 4px solid rgba(230, 236, 235, .9); background: transparent;
+  justify-self: center;
+}
+.camrec-btn::after {
+  content: ''; position: absolute; left: 50%; top: 50%;
+  transform: translate(-50%, -50%);
+  width: 46px; height: 46px; border-radius: 50%;
+  background: #e5484d; transition: border-radius .15s, width .15s, height .15s;
+}
+.camrec-btn[data-on="1"]::after { width: 26px; height: 26px; border-radius: 6px; }
+
+.upload-btns { display: flex; gap: 8px; align-items: center; }
+
+/* capture-mode toggle + photo-mode shutter */
+.camrec-mode {
+  position: absolute; top: 16px; left: 50%; transform: translateX(-50%);
+  display: flex; padding: 3px; gap: 2px;
+  background: rgba(7, 9, 9, .65); backdrop-filter: blur(8px);
+  border: 1px solid rgba(255, 255, 255, .12); border-radius: var(--pill);
+}
+.camrec-mode button {
+  min-width: 78px; padding: 7px 16px; border-radius: var(--pill);
+  font: 500 13px var(--sans, system-ui); color: rgba(230, 236, 235, .65);
+}
+.camrec-mode button[aria-pressed="true"] { background: rgba(230, 236, 235, .92); color: #0b0e0e; }
+.camrec-btn[data-mode="photos"] { border-color: var(--accent); }
+.camrec-btn[data-mode="photos"]::after { background: var(--paper); }
+.camrec-done {
+  position: absolute; right: 22px; bottom: 108px;
+}
+.camrec-flash video { filter: brightness(1.7); }
+
+.runs a { color: var(--accent); text-decoration: none; }
+.runs a:hover { text-decoration: underline; }
+
+/* the restored capture: a small tile like the test sets, no pill */
+.lastcap {
+  padding: 4px 4px 5px; border: 1px solid transparent; border-radius: 12px;
+  overflow: hidden; text-align: center; cursor: pointer;
+  transition: border-color .14s, background .14s;
+}
+.lastcap img {
+  display: block; width: 74px; aspect-ratio: 16 / 10; object-fit: cover;
+  background: var(--panel-2); opacity: .75; transition: opacity .14s;
+  border-radius: 8px;
+}
+.lastcap span {
+  display: block; margin-top: 5px;
+  font: 500 11px var(--mono); color: var(--dim); letter-spacing: .02em;
+  white-space: nowrap;
+}
+.lastcap:hover { background: var(--panel-2); }
+.lastcap:hover img { opacity: 1; }
+
+/* breathing room above Start training (the removed paragraph used to provide it) */
+.startrow { margin-top: 18px; }   /* the gap the Start button used to carry */
+
+/* capture close, top right */
+.camrec-x {
+  position: absolute; top: 14px; right: 14px; z-index: 2;
+  width: 34px; height: 34px; border-radius: 50%; cursor: pointer;
+  display: grid; place-items: center;
+  background: rgba(7, 9, 9, .65); backdrop-filter: blur(8px);
+  border: 1px solid rgba(255, 255, 255, .12);
+  color: var(--paper); font-size: 19px; line-height: 1;
+}
+.camrec-x:hover { background: rgba(7, 9, 9, .85); }
+
+/* the upload box is controls-only now */
+.upload { justify-content: center; }
+.upload-btns { align-items: center; }
+
+/* the record dot (kept for when video capture returns) */
+.recdot {
+  display: inline-block; width: 8px; height: 8px; border-radius: 50%;
+  background: #e5484d; margin-right: 7px; vertical-align: 0;
+}
+.capicon { width: 15px; height: 15px; margin-right: 7px; vertical-align: -3px; }
+
+/* the primary CTA: gradient accent, inner sheen, soft glow, gentle lift —
+   modern without theatrics (transform + shadow only, ~150ms) */
+#btn-go:not([disabled]) {
+  background: linear-gradient(180deg, #4be0cd, #23c2af);
+  color: #032420;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, .28),
+    0 0 18px 2px var(--accent-30),
+    0 1px 2px rgba(0, 0, 0, .35);
+  transition: transform .12s ease, box-shadow .16s ease, filter .16s ease;
+}
+#btn-go:not([disabled]):hover {
+  filter: brightness(1.06);
+  transform: translateY(-1px);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, .3),
+    0 0 26px 4px rgba(47, 212, 193, .42),
+    0 2px 4px rgba(0, 0, 0, .3);
+}
+#btn-go:not([disabled]):active {
+  transform: translateY(0);
+  filter: brightness(.98);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, .18),
+    0 0 10px 1px rgba(47, 212, 193, .3);
+}
+
+/* bright only when actually available — disabled reads as a quiet outline */
+#btn-go[disabled] {
+  background: transparent; color: var(--dim);
+  border: 1px solid var(--line); cursor: default;
+}
+
+label.btn { cursor: pointer; }
+
+/* the no-WebGPU notice: quiet, specific, sits above the upload buttons */
+.gpuwarn {
+  margin: 16px auto 4px; max-width: 54ch; text-align: left;
+  padding: 12px 16px; border: 1px solid rgba(242, 160, 63, .35);
+  border-radius: 12px; background: rgba(242, 160, 63, .06);
+  font-size: 12.5px; line-height: 1.55; color: var(--muted);
+}
+.gpuwarn > b { display: block; margin-bottom: 4px; color: var(--paper); font-weight: 600; }
+.gpuwarn b { color: var(--paper); font-weight: 500; }
+
+/* the selected set describes itself under the preset row */
+.setdesc {
+  margin: 2px 0 0; text-align: center;
+  font-size: 12.5px; line-height: 1.55; color: var(--muted);
+}
+.setdesc b { color: var(--paper); font-weight: 600; }
+.setdesc a { color: var(--accent); text-decoration: none; margin-left: 2px; }
+.setdesc a:hover { text-decoration: underline; }
+.setdesc .approx { color: var(--dim); margin-left: 8px; }
+
+/* solve-failure card: plain words + the capture rules that matter */
+.failcard { width: min(420px, 88%); }
+.fail-why { margin: 0; font-size: 13px; color: var(--muted); line-height: 1.5; }
+.fail-tips { margin: 2px 0 4px; padding-left: 18px; display: grid; gap: 7px; }
+.fail-tips li { font-size: 12.5px; color: var(--muted); line-height: 1.45; }
+.fail-tips b { color: var(--paper); }

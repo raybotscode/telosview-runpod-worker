@@ -1,0 +1,454 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>TelosView</title>
+<style>
+  :root {
+    --bg: #0a0a0c;
+    --surface: #141418;
+    --border: #222228;
+    --text: #e8e8ec;
+    --dim: #888890;
+    --accent: #73d8d4;
+    --accent-dim: #3a7a78;
+    --danger: #e84057;
+    --success: #40c88a;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    background: var(--bg); color: var(--text); min-height: 100vh;
+  }
+  .container { max-width: 800px; margin: 0 auto; padding: 24px 20px; }
+  header {
+    display: flex; align-items: center; gap: 12px;
+    padding: 16px 20px; border-bottom: 1px solid var(--border);
+  }
+  header h1 { font-size: 18px; font-weight: 600; }
+  header .badge {
+    font-size: 11px; padding: 2px 8px; border-radius: 4px;
+    background: var(--accent-dim); color: var(--accent);
+  }
+  .view { display: none; }
+  .view.active { display: block; }
+
+  /* Project list */
+  .new-row { display: flex; gap: 10px; margin-bottom: 24px; }
+  .new-row input {
+    flex: 1; padding: 10px 14px; border-radius: 8px;
+    border: 1px solid var(--border); background: var(--surface);
+    color: var(--text); font-size: 14px; outline: none;
+  }
+  .new-row input:focus { border-color: var(--accent); }
+  .btn {
+    padding: 10px 20px; border-radius: 8px; border: none;
+    font-size: 14px; font-weight: 500; cursor: pointer; transition: all 0.15s;
+  }
+  .btn-primary { background: var(--accent); color: #000; }
+  .btn-primary:hover { filter: brightness(1.1); }
+  .btn-secondary { background: var(--surface); color: var(--text); border: 1px solid var(--border); }
+  .btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+  .project-card {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 14px 18px; border-radius: 10px;
+    background: var(--surface); border: 1px solid var(--border);
+    margin-bottom: 8px; cursor: pointer; transition: border-color 0.15s;
+  }
+  .project-card:hover { border-color: var(--accent-dim); }
+  .project-card .name { font-weight: 500; font-size: 15px; }
+  .project-card .meta { font-size: 12px; color: var(--dim); margin-top: 2px; }
+  .status-dot {
+    width: 8px; height: 8px; border-radius: 50%;
+    display: inline-block; margin-right: 8px;
+  }
+  .status-dot.queued, .status-dot.pending { background: var(--dim); }
+  .status-dot.processing { background: var(--accent); animation: pulse 1.5s infinite; }
+  .status-dot.completed { background: var(--success); }
+  .status-dot.failed { background: var(--danger); }
+  @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.3; } }
+
+  .empty-state { text-align: center; padding: 60px 20px; color: var(--dim); }
+
+  /* Detail */
+  .back-btn {
+    background: none; border: none; color: var(--dim);
+    font-size: 14px; cursor: pointer; padding: 4px 0; margin-bottom: 16px;
+  }
+  .back-btn:hover { color: var(--text); }
+  .project-header { display: flex; align-items: center; gap: 12px; margin-bottom: 24px; }
+  .project-header h2 { font-size: 22px; font-weight: 600; }
+  .tag {
+    font-size: 11px; padding: 3px 10px; border-radius: 6px;
+    text-transform: uppercase; font-weight: 600; letter-spacing: 0.5px;
+  }
+  .tag.pending, .tag.queued { background: #2a2a30; color: var(--dim); }
+  .tag.processing { background: #1a3a3a; color: var(--accent); }
+  .tag.completed { background: #1a3a2a; color: var(--success); }
+  .tag.failed { background: #3a1a1a; color: var(--danger); }
+
+  /* Upload */
+  .upload-zone {
+    border: 2px dashed var(--border); border-radius: 12px;
+    padding: 40px 20px; text-align: center; cursor: pointer;
+    transition: all 0.2s; margin-bottom: 20px;
+  }
+  .upload-zone:hover, .upload-zone.dragover {
+    border-color: var(--accent); background: rgba(115,216,212,0.05);
+  }
+  .upload-zone p { color: var(--dim); font-size: 14px; margin-top: 8px; }
+  .upload-zone .icon { font-size: 36px; }
+
+  /* Progress */
+  .progress-section { margin-top: 20px; }
+  .progress-bar-track {
+    height: 6px; border-radius: 3px; background: var(--border);
+    overflow: hidden; margin: 10px 0;
+  }
+  .progress-bar-fill {
+    height: 100%; border-radius: 3px; background: var(--accent);
+    transition: width 0.5s; width: 0%;
+  }
+  .progress-step {
+    font-size: 12px; color: var(--accent); text-transform: uppercase;
+    font-weight: 600; letter-spacing: 0.5px; margin-bottom: 4px;
+  }
+  .progress-message { font-size: 13px; color: var(--dim); }
+
+  /* Metrics */
+  .metrics {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+    gap: 10px; margin-top: 16px;
+  }
+  .metric-card {
+    padding: 12px; border-radius: 8px;
+    background: var(--surface); border: 1px solid var(--border);
+  }
+  .metric-card .label { font-size: 11px; color: var(--dim); text-transform: uppercase; }
+  .metric-card .value { font-size: 20px; font-weight: 600; margin-top: 4px; }
+
+  /* Server status */
+  .server-status {
+    display: flex; align-items: center; gap: 8px;
+    padding: 8px 14px; border-radius: 8px;
+    background: var(--surface); border: 1px solid var(--border);
+    font-size: 12px; color: var(--dim); margin-bottom: 16px;
+  }
+  .server-dot { width: 6px; height: 6px; border-radius: 50%; }
+  .server-dot.ok { background: var(--success); }
+  .server-dot.down { background: var(--danger); }
+
+  /* Log */
+  .log-box {
+    margin-top: 16px; padding: 12px; border-radius: 8px;
+    background: var(--surface); border: 1px solid var(--border);
+    font-family: 'SF Mono', 'Fira Code', monospace;
+    font-size: 12px; color: var(--dim);
+    max-height: 200px; overflow-y: auto;
+    white-space: pre-wrap; word-break: break-all; line-height: 1.6;
+  }
+
+  .hidden { display: none !important; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>TelosView</h1>
+  <span class="badge">server mode</span>
+</header>
+
+<div class="container">
+  <div class="server-status" id="server-status">
+    <span class="server-dot down" id="server-dot"></span>
+    <span id="server-text">Checking server...</span>
+  </div>
+
+  <!-- Project List -->
+  <div id="view-list" class="view active">
+    <div class="new-row">
+      <input type="text" id="project-name" placeholder="Project name..." maxlength="50">
+      <button class="btn btn-primary" id="btn-create">New Project</button>
+    </div>
+    <div id="project-list"></div>
+  </div>
+
+  <!-- Project Detail -->
+  <div id="view-project" class="view">
+    <button class="back-btn" id="btn-back">← Back to projects</button>
+    <div class="project-header">
+      <h2 id="detail-name"></h2>
+      <span class="tag" id="detail-status"></span>
+    </div>
+
+    <div id="upload-section">
+      <div class="upload-zone" id="upload-zone">
+        <div class="icon">🎬</div>
+        <p>Drop a video file here or click to browse</p>
+        <p style="font-size:12px;margin-top:4px">MP4, MOV, WebM — up to 500MB</p>
+        <input type="file" id="video-input" accept="video/*" style="display:none">
+      </div>
+    </div>
+
+    <div id="progress-section" class="progress-section hidden">
+      <div class="progress-step" id="progress-step">Preparing...</div>
+      <div class="progress-bar-track">
+        <div class="progress-bar-fill" id="progress-fill"></div>
+      </div>
+      <div class="progress-message" id="progress-message">Starting...</div>
+    </div>
+
+    <div id="metrics-section" class="hidden">
+      <div class="metrics">
+        <div class="metric-card">
+          <div class="label">Splats</div>
+          <div class="value" id="m-splats">—</div>
+        </div>
+        <div class="metric-card">
+          <div class="label">Iterations</div>
+          <div class="value" id="m-iters">—</div>
+        </div>
+        <div class="metric-card">
+          <div class="label">Speed</div>
+          <div class="value" id="m-speed">—</div>
+        </div>
+        <div class="metric-card">
+          <div class="label">PSNR</div>
+          <div class="value" id="m-psnr">—</div>
+        </div>
+      </div>
+    </div>
+
+    <div id="download-section" class="hidden" style="margin-top:16px">
+      <button class="btn btn-primary" id="btn-download">Download .ply</button>
+    </div>
+
+    <div class="log-box hidden" id="log-box"></div>
+  </div>
+</div>
+
+<script>
+const API = '';  // Same origin
+let projects = [];
+let currentProject = null;
+let polling = null;
+
+const $ = id => document.getElementById(id);
+
+// ── Server health check ──
+async function checkServer() {
+  try {
+    const res = await fetch(`${API}/api/health`);
+    const data = await res.json();
+    $('server-dot').className = 'server-dot ok';
+    $('server-text').textContent = `Server online · Queue: ${data.queue} · GPU: ${data.browser ? 'ready' : 'starting'}`;
+  } catch {
+    $('server-dot').className = 'server-dot down';
+    $('server-text').textContent = 'Server offline — start with: node server/src/index.js';
+  }
+}
+checkServer();
+setInterval(checkServer, 15000);
+
+// ── Project List ──
+async function loadProjects() {
+  try {
+    const res = await fetch(`${API}/api/projects`);
+    projects = await res.json();
+    renderList();
+  } catch {}
+}
+
+function renderList() {
+  const $list = $('project-list');
+  if (projects.length === 0) {
+    $list.innerHTML = '<div class="empty-state"><p>No projects yet. Create one above.</p></div>';
+    return;
+  }
+  $list.innerHTML = projects.map(p => `
+    <div class="project-card" data-id="${p.id}">
+      <div>
+        <div class="name"><span class="status-dot ${p.status}"></span>${esc(p.name)}</div>
+        <div class="meta">${p.status} · ${p.hasPly ? formatBytes(p.plySize) : new Date(p.createdAt).toLocaleDateString()}</div>
+      </div>
+    </div>
+  `).join('');
+  $list.querySelectorAll('.project-card').forEach(el => {
+    el.addEventListener('click', () => openProject(el.dataset.id));
+  });
+}
+
+$('btn-create').addEventListener('click', () => {
+  const name = $('project-name').value.trim();
+  if (!name) return;
+  // Switch to detail view with upload
+  currentProject = { name, id: null, status: 'pending' };
+  showDetail();
+  $('project-name').value = '';
+});
+$('project-name').addEventListener('keydown', e => {
+  if (e.key === 'Enter') $('btn-create').click();
+});
+
+// ── Detail View ──
+function showDetail() {
+  $('view-list').classList.remove('active');
+  $('view-project').classList.add('active');
+  $('detail-name').textContent = currentProject.name;
+  $('detail-status').textContent = currentProject.status;
+  $('detail-status').className = `tag ${currentProject.status}`;
+  $('upload-section').classList.toggle('hidden', currentProject.id !== null);
+  $('progress-section').classList.toggle('hidden', currentProject.status === 'pending' || currentProject.status === 'completed');
+  $('metrics-section').classList.add('hidden');
+  $('download-section').classList.add('hidden');
+  $('log-box').classList.add('hidden');
+}
+
+function openProject(id) {
+  const p = projects.find(x => x.id === id);
+  if (!p) return;
+  currentProject = p;
+  showDetail();
+  if (p.status === 'processing' || p.status === 'queued') startPolling(p.id);
+  if (p.hasPly) $('download-section').classList.remove('hidden');
+  if (p.status === 'completed' && p.metrics) showMetrics(p.metrics);
+}
+
+$('btn-back').addEventListener('click', () => {
+  stopPolling();
+  $('view-project').classList.remove('active');
+  $('view-list').classList.add('active');
+  currentProject = null;
+  loadProjects();
+});
+
+// ── Upload ──
+const $zone = $('upload-zone');
+const $videoInput = $('video-input');
+
+$zone.addEventListener('click', () => $videoInput.click());
+$zone.addEventListener('dragover', e => { e.preventDefault(); $zone.classList.add('dragover'); });
+$zone.addEventListener('dragleave', () => $zone.classList.remove('dragover'));
+$zone.addEventListener('drop', e => {
+  e.preventDefault(); $zone.classList.remove('dragover');
+  if (e.dataTransfer.files.length) uploadVideo(e.dataTransfer.files[0]);
+});
+$videoInput.addEventListener('change', e => {
+  if (e.target.files.length) uploadVideo(e.target.files[0]);
+});
+
+async function uploadVideo(file) {
+  if (!currentProject) return;
+
+  $('upload-section').classList.add('hidden');
+  $('progress-section').classList.remove('hidden');
+  $('progress-step').textContent = 'Uploading...';
+  $('progress-message').textContent = `Uploading ${file.name} (${formatBytes(file.size)})`;
+  $('progress-fill').style.width = '10%';
+
+  const form = new FormData();
+  form.append('video', file);
+  form.append('name', currentProject.name);
+
+  try {
+    const res = await fetch(`${API}/api/projects`, { method: 'POST', body: form });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Upload failed');
+
+    currentProject = data;
+    $('detail-status').textContent = data.status;
+    $('detail-status').className = `tag ${data.status}`;
+
+    // Start polling
+    startPolling(data.id);
+
+  } catch (err) {
+    $('progress-step').textContent = 'Upload failed';
+    $('progress-message').textContent = err.message;
+    $('progress-fill').style.width = '0%';
+  }
+}
+
+// ── Polling ──
+function startPolling(id) {
+  stopPolling();
+  poll(id);
+  polling = setInterval(() => poll(id), 2000);
+}
+
+function stopPolling() {
+  if (polling) { clearInterval(polling); polling = null; }
+}
+
+async function poll(id) {
+  try {
+    const res = await fetch(`${API}/api/projects/${id}`);
+    const job = await res.json();
+
+    $('detail-status').textContent = job.status;
+    $('detail-status').className = `tag ${job.status}`;
+
+    if (job.status === 'processing' || job.status === 'queued') {
+      $('progress-section').classList.remove('hidden');
+      $('progress-step').textContent = job.stage || 'Processing...';
+      $('progress-message').textContent = job.message || '';
+      $('progress-fill').style.width = `${job.progress}%`;
+
+      if (job.metrics) {
+        $('metrics-section').classList.remove('hidden');
+        showMetrics(job.metrics);
+      }
+
+      if (job.log?.length) {
+        $('log-box').classList.remove('hidden');
+        $('log-box').textContent = job.log.join('\n');
+        $('log-box').scrollTop = $('log-box').scrollHeight;
+      }
+    }
+
+    if (job.status === 'completed') {
+      stopPolling();
+      $('progress-section').classList.remove('hidden');
+      $('progress-step').textContent = 'Complete';
+      $('progress-message').textContent = job.message;
+      $('progress-fill').style.width = '100%';
+      $('metrics-section').classList.remove('hidden');
+      $('download-section').classList.remove('hidden');
+      if (job.metrics) showMetrics(job.metrics);
+      if (job.log?.length) {
+        $('log-box').classList.remove('hidden');
+        $('log-box').textContent = job.log.join('\n');
+      }
+    }
+
+    if (job.status === 'failed') {
+      stopPolling();
+      $('progress-step').textContent = 'Failed';
+      $('progress-message').textContent = job.error || job.message;
+      $('progress-fill').style.width = '0%';
+    }
+  } catch {}
+}
+
+function showMetrics(m) {
+  if (!m) return;
+  $('m-splats').textContent = m.splats ? Number(m.splats).toLocaleString() : '—';
+  $('m-iters').textContent = m.iter ? Number(m.iter).toLocaleString() : '—';
+  $('m-speed').textContent = m.itersPerSec ? `${m.itersPerSec}/s` : '—';
+  $('m-psnr').textContent = m.psnrTrain ? `${m.psnrTrain} dB` : '—';
+}
+
+$('btn-download').addEventListener('click', () => {
+  if (!currentProject?.id) return;
+  window.open(`${API}/api/projects/${currentProject.id}/ply`, '_blank');
+});
+
+function esc(s) { return s.replace(/[<>&"]/g, c => ({'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;'}[c])); }
+function formatBytes(b) { if (!b) return ''; return (b / 1024 / 1024).toFixed(1) + ' MB'; }
+
+loadProjects();
+</script>
+</body>
+</html>
