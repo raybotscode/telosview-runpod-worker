@@ -1,7 +1,7 @@
 /**
  * RunPod API client for programmatic GPU pod management.
  * Uses RunPod's REST API v1 for pod lifecycle management.
- * Uses a pre-built Docker image — no SSH bootstrap or dockerStartCmd needed.
+ * Uses base image + startup script (GHCR pull not reliable on RunPod).
  */
 
 const RUNPOD_REST_BASE = 'https://rest.runpod.io/v1';
@@ -45,6 +45,7 @@ export interface PodOptions {
   name?: string;
   ports?: string[];
   env?: Array<{ key: string; value: string }>;
+  dockerStartCmd?: string[];
 }
 
 export interface PodInfo {
@@ -73,11 +74,12 @@ export async function launchPod(options: PodOptions = {}): Promise<string> {
     gpuCount = 1,
     containerDiskInGb = 50,
     volumeInGb = 0,
-    imageName = process.env.RUNPOD_DOCKER_IMAGE || 'ghcr.io/raybotscode/telosview-runpod-worker-worker:latest',
+    imageName = process.env.RUNPOD_DOCKER_IMAGE || 'runpod/pytorch:1.1.0-cu1281-torch280-ubuntu2204',
     cloudType = 'COMMUNITY',
     name = 'telosview-processor',
     ports = ['8080/http'],
     env,
+    dockerStartCmd,
   } = options;
 
   const body: Record<string, any> = {
@@ -93,6 +95,10 @@ export async function launchPod(options: PodOptions = {}): Promise<string> {
 
   if (env && env.length > 0) {
     body.env = env;
+  }
+
+  if (dockerStartCmd) {
+    body.dockerStartCmd = dockerStartCmd;
   }
 
   const pod = await restFetch<{ id: string; desiredStatus: string }>('/pods', {

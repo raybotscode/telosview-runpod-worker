@@ -208,8 +208,11 @@ async function processProjectLocal(
 
 /**
  * RunPod GPU processing — launches a remote pod with real GPU.
- * Uses a pre-built Docker image with the worker server baked in.
+ * Uses base image + startup script that installs deps and starts worker.
+ * Short dockerStartCmd ensures pod gets a public IP quickly.
  */
+const STARTUP_SCRIPT_URL = 'https://raw.githubusercontent.com/raybotscode/telosview-runpod-worker/main/processing/runpod-worker/startup.sh';
+
 async function processProjectRunPod(
   job: ProcessingJob,
   onProgress?: ProcessingProgressCallback
@@ -227,10 +230,14 @@ async function processProjectRunPod(
       metrics: null,
     });
 
-    // 1. Launch GPU pod with pre-built worker image
+    // 1. Launch GPU pod with base image + startup script in background
+    //    Short dockerStartCmd ensures pod gets public IP quickly (~30s)
+    //    Startup script runs in background: installs Node.js, Chromium, clones repo, starts server
+    const startCmd = `curl -sL ${STARTUP_SCRIPT_URL} | bash & sleep infinity`;
     podId = await launchPod({
       name: `telosview-${job.projectId}`,
       ports: ['8080/http'],
+      dockerStartCmd: ['bash', '-c', startCmd],
     });
     console.log(`[orchestrator] Launched pod ${podId}`);
 
@@ -257,7 +264,7 @@ async function processProjectRunPod(
       metrics: null,
     });
 
-    const endpoint = await waitForHttpReady(podId, 8080, 5 * 60 * 1000);
+    const endpoint = await waitForHttpReady(podId, 8080, 10 * 60 * 1000);
     console.log(`[orchestrator] Pod endpoint: ${endpoint}`);
 
     // 4. Upload frames
