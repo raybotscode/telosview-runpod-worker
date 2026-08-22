@@ -37,8 +37,9 @@ echo "[startup] Installing npm dependencies..."
 cd /app
 npm install --ignore-scripts > /dev/null 2>&1 || echo "[startup] npm install had issues"
 
-# Install Playwright browsers (Chromium)
-echo "[startup] Installing Playwright Chromium..."
+# Install Playwright browsers (Chromium) + system deps
+echo "[startup] Installing Playwright Chromium and system deps..."
+npx playwright install-deps chromium > /dev/null 2>&1 || echo "[startup] Playwright deps had issues"
 npx playwright install chromium > /dev/null 2>&1 || echo "[startup] Playwright install had issues"
 
 echo "[startup] Starting worker server..."
