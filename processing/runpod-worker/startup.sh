@@ -37,6 +37,10 @@ echo "[startup] Installing npm dependencies..."
 cd /app
 npm install --ignore-scripts > /dev/null 2>&1 || echo "[startup] npm install had issues"
 
+# Install Playwright browsers (Chromium)
+echo "[startup] Installing Playwright Chromium..."
+npx playwright install chromium > /dev/null 2>&1 || echo "[startup] Playwright install had issues"
+
 echo "[startup] Starting worker server..."
 cd /app
 exec node server.mjs
