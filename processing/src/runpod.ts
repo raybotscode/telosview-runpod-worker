@@ -1,9 +1,10 @@
 /**
  * RunPod API client for programmatic GPU pod management.
- * Uses RunPod's GraphQL API to launch, monitor, and terminate GPU pods.
+ * Uses RunPod's REST API v1 for pod lifecycle management.
+ * REST API supports dockerStartCmd which GraphQL's podFindAndDeployOnDemand does not.
  */
 
-const RUNPOD_API_BASE = 'https://api.runpod.io/graphql';
+const RUNPOD_REST_BASE = 'https://rest.runpod.io/v1';
 
 function getApiKey(): string {
   const key = process.env.RUNPOD_API_KEY;
@@ -11,45 +12,47 @@ function getApiKey(): string {
   return key;
 }
 
-async function graphql<T = any>(query: string, variables?: Record<string, any>): Promise<T> {
-  const response = await fetch(RUNPOD_API_BASE, {
-    method: 'POST',
+async function restFetch<T = any>(path: string, options: RequestInit = {}): Promise<T> {
+  const url = `${RUNPOD_REST_BASE}${path}`;
+  const response = await fetch(url, {
+    ...options,
     headers: {
       'Content-Type': 'application/json',
       'Authorization': `Bearer ${getApiKey()}`,
+      ...options.headers,
     },
-    body: JSON.stringify({ query, variables }),
   });
 
+  const data = await response.json();
+
   if (!response.ok) {
-    throw new Error(`RunPod API error: ${response.status} ${response.statusText}`);
+    const detail = typeof data === 'object' ? JSON.stringify(data) : String(data);
+    throw new Error(`RunPod API error: ${response.status} ${response.statusText} — ${detail}`);
   }
 
-  const data = await response.json();
-  if (data.errors?.length) {
-    throw new Error(`RunPod GraphQL error: ${data.errors.map((e: any) => e.message).join(', ')}`);
-  }
-  return data.data;
+  return data as T;
 }
 
 // ── Types ──
 
 export interface PodOptions {
-  gpuTypeId?: string;
+  gpuTypeIds?: string[];
   gpuCount?: number;
   containerDiskInGb?: number;
   volumeInGb?: number;
   imageName?: string;
-  cloudType?: 'SECURE' | 'ALL';
+  cloudType?: 'SECURE' | 'COMMUNITY';
   name?: string;
-  ports?: string;       // e.g. "8080/http"
-  env?: Record<string, string>;
-  dockerArgs?: string;  // Startup command passed to the container
+  ports?: string[];
+  env?: Array<{ key: string; value: string }>;
+  dockerStartCmd?: string[];
 }
 
 export interface PodInfo {
   id: string;
   desiredStatus: string;
+  publicIp?: string;
+  machineId?: string;
   runtime: {
     uptimeInSeconds: number;
     gpus: { id: string; gpuUtilPercent: number; memoryUtilPercent: number }[];
@@ -60,62 +63,49 @@ export interface PodInfo {
   } | null;
 }
 
-export interface PodLaunchResult {
-  id: string;
-  desiredStatus: string;
-  runtime: {
-    uptimeInSeconds: number;
-  } | null;
-}
-
 // ── API Functions ──
 
 /**
- * Launch a new GPU pod on demand.
+ * Launch a new GPU pod on demand via REST API.
  */
 export async function launchPod(options: PodOptions = {}): Promise<string> {
   const {
-    gpuTypeId = process.env.RUNPOD_GPU_TYPE || 'NVIDIA GeForce RTX 3090',
+    gpuTypeIds = [process.env.RUNPOD_GPU_TYPE || 'NVIDIA GeForce RTX 3090'],
     gpuCount = 1,
     containerDiskInGb = 50,
     volumeInGb = 0,
     imageName = process.env.RUNPOD_DOCKER_IMAGE || 'runpod/pytorch:1.1.0-cu1281-torch280-ubuntu2204',
-    cloudType = 'SECURE',
+    cloudType = 'COMMUNITY',
     name = 'telosview-processor',
-    ports = '22/tcp,8080/http',
-    env = {},
-    dockerArgs,
+    ports = ['8080/http'],
+    env,
+    dockerStartCmd,
   } = options;
 
-  const mutation = `
-    mutation podFindAndDeployOnDemand($input: PodFindAndDeployOnDemandInput!) {
-      podFindAndDeployOnDemand(input: $input) {
-        id
-        desiredStatus
-        runtime { uptimeInSeconds }
-      }
-    }
-  `;
-
-  const input: Record<string, any> = {
+  const body: Record<string, any> = {
     cloudType,
     gpuCount,
-    gpuTypeId,
+    gpuTypeIds,
     containerDiskInGb,
     volumeInGb,
     imageName,
     name,
     ports,
-    env: Object.entries(env).map(([key, value]) => ({ key, value })),
   };
 
-  if (dockerArgs) {
-    input.dockerArgs = dockerArgs;
+  if (env && env.length > 0) {
+    body.env = env;
   }
 
-  const data = await graphql<{ podFindAndDeployOnDemand: PodLaunchResult }>(mutation, { input });
+  if (dockerStartCmd) {
+    body.dockerStartCmd = dockerStartCmd;
+  }
 
-  const pod = data.podFindAndDeployOnDemand;
+  const pod = await restFetch<{ id: string; desiredStatus: string }>('/pods', {
+    method: 'POST',
+    body: JSON.stringify(body),
+  });
+
   console.log(`[runpod] Launched pod ${pod.id} (status: ${pod.desiredStatus})`);
   return pod.id;
 }
@@ -124,12 +114,7 @@ export async function launchPod(options: PodOptions = {}): Promise<string> {
  * Terminate a running pod.
  */
 export async function terminatePod(podId: string): Promise<void> {
-  const mutation = `
-    mutation podTerminate($input: PodTerminateInput!) {
-      podTerminate(input: $input)
-    }
-  `;
-  await graphql(mutation, { input: { podId } });
+  await restFetch(`/pods/${podId}`, { method: 'DELETE' });
   console.log(`[runpod] Terminated pod ${podId}`);
 }
 
@@ -137,23 +122,7 @@ export async function terminatePod(podId: string): Promise<void> {
  * Get the current status of a pod.
  */
 export async function getPodStatus(podId: string): Promise<PodInfo> {
-  const query = `
-    query pod($input: PodFilter!) {
-      pod(input: $input) {
-        id
-        desiredStatus
-        runtime {
-          uptimeInSeconds
-          gpus { id gpuUtilPercent memoryUtilPercent }
-          ports { ip isIpPublic privatePort publicPort type }
-        }
-        machine { podHostId }
-      }
-    }
-  `;
-
-  const data = await graphql<{ pod: PodInfo }>(query, { input: { podId } });
-  return data.pod;
+  return restFetch<PodInfo>(`/pods/${podId}`);
 }
 
 /**
@@ -170,8 +139,10 @@ export async function waitForReady(
     const pod = await getPodStatus(podId);
     console.log(`[runpod] Pod ${podId} status: ${pod.desiredStatus}`);
 
-    if (pod.desiredStatus === 'RUNNING' && pod.runtime) {
-      console.log(`[runpod] Pod ${podId} is ready (uptime: ${pod.runtime.uptimeInSeconds}s)`);
+    // REST API: when pod is actually running, publicIp will be set
+    // desiredStatus is "RUNNING" from creation but that just means "we want it running"
+    if (pod.desiredStatus === 'RUNNING' && pod.publicIp) {
+      console.log(`[runpod] Pod ${podId} is RUNNING (IP: ${pod.publicIp})`);
       return true;
     }
 
@@ -195,12 +166,12 @@ export function getPodEndpoint(podId: string, port: number = 8080): string {
 
 /**
  * Wait for the pod's HTTP service to be reachable.
- * Polls the /health endpoint until it responds or times out.
+ * Polls the /health endpoint until it returns JSON (not RunPod's HTML waiting page).
  */
 export async function waitForHttpReady(
   podId: string,
   port: number = 8080,
-  timeoutMs: number = 5 * 60 * 1000,
+  timeoutMs: number = 8 * 60 * 1000,
   pollIntervalMs: number = 5_000
 ): Promise<string> {
   const endpoint = getPodEndpoint(podId, port);
@@ -210,8 +181,12 @@ export async function waitForHttpReady(
     try {
       const res = await fetch(`${endpoint}/health`, { signal: AbortSignal.timeout(10_000) });
       if (res.ok) {
-        console.log(`[runpod] HTTP service ready at ${endpoint}`);
-        return endpoint;
+        const contentType = res.headers.get('content-type') || '';
+        // RunPod proxy returns HTML "waiting" page when service isn't ready
+        if (contentType.includes('application/json')) {
+          console.log(`[runpod] HTTP service ready at ${endpoint}`);
+          return endpoint;
+        }
       }
     } catch {
       // Service not ready yet
@@ -226,23 +201,5 @@ export async function waitForHttpReady(
  * List all pods for the account.
  */
 export async function listPods(): Promise<PodInfo[]> {
-  const query = `
-    query {
-      myself {
-        pods {
-          id
-          desiredStatus
-          runtime {
-            uptimeInSeconds
-            gpus { id gpuUtilPercent memoryUtilPercent }
-            ports { ip isIpPublic privatePort publicPort type }
-          }
-          machine { podHostId }
-        }
-      }
-    }
-  `;
-
-  const data = await graphql<{ myself: { pods: PodInfo[] } }>(query);
-  return data.myself.pods;
+  return restFetch<PodInfo[]>('/pods');
 }
