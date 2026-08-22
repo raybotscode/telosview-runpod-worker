@@ -235,8 +235,14 @@ async function processProjectRunPod(
       metrics: null,
     });
 
-    // 1. Launch GPU pod
-    podId = await launchPod({ name: `telosview-${job.projectId}` });
+    // 1. Launch GPU pod with RunPod's PyTorch image
+    podId = await launchPod({
+      name: `telosview-${job.projectId}`,
+      env: {
+        // RunPod SSH access
+        RUNPOD_SSH_KEY: process.env.RUNPOD_SSH_KEY || '',
+      },
+    });
     console.log(`[orchestrator] Launched pod ${podId}`);
 
     // 2. Wait for pod RUNNING
@@ -252,12 +258,28 @@ async function processProjectRunPod(
     const ready = await waitForReady(podId, 10 * 60 * 1000);
     if (!ready) throw new Error('Pod did not become ready in time');
 
-    // 3. Wait for HTTP service
+    // 3. Get pod SSH connection info
     onProgress?.({
       projectId: job.projectId,
       status: 'processing',
       stage: 'loading',
       progress: 4,
+      message: 'Connecting to GPU pod via SSH...',
+      metrics: null,
+    });
+
+    const { sshHost, sshPort } = await getPodSSHInfo(podId);
+    console.log(`[orchestrator] Pod SSH: ${sshHost}:${sshPort}`);
+
+    // 4. Bootstrap the worker on the pod
+    await bootstrapWorker(sshHost, sshPort, job.projectId, onProgress);
+
+    // 5. Wait for HTTP service
+    onProgress?.({
+      projectId: job.projectId,
+      status: 'processing',
+      stage: 'loading',
+      progress: 6,
       message: 'Waiting for worker HTTP service...',
       metrics: null,
     });
@@ -265,19 +287,19 @@ async function processProjectRunPod(
     const endpoint = await waitForHttpReady(podId, 8080, 5 * 60 * 1000);
     console.log(`[orchestrator] Pod endpoint: ${endpoint}`);
 
-    // 4. Upload frames
+    // 6. Upload frames
     onProgress?.({
       projectId: job.projectId,
       status: 'processing',
       stage: 'uploading',
-      progress: 5,
+      progress: 7,
       message: 'Uploading frames to GPU pod...',
       metrics: null,
     });
 
     await uploadFramesToPod(endpoint, job.projectId, job.framesPath);
 
-    // 5. Start processing
+    // 7. Start processing
     onProgress?.({
       projectId: job.projectId,
       status: 'processing',
@@ -300,7 +322,7 @@ async function processProjectRunPod(
       throw new Error(`Failed to start processing: ${processRes.status} ${body}`);
     }
 
-    // 6. Stream progress via SSE
+    // 8. Stream progress via SSE
     const result = await streamRunPodProgress(
       endpoint, job.projectId, onProgress
     );
@@ -315,7 +337,7 @@ async function processProjectRunPod(
       };
     }
 
-    // 7. Download PLY
+    // 9. Download PLY
     onProgress?.({
       projectId: job.projectId,
       status: 'processing',
@@ -363,6 +385,95 @@ async function processProjectRunPod(
       );
     }
   }
+}
+
+/** Get SSH connection info for a RunPod pod */
+async function getPodSSHInfo(podId: string): Promise<{ sshHost: string; sshPort: number }> {
+  const { getPodStatus } = await import('./runpod.js');
+  const pod = await getPodStatus(podId);
+
+  if (!pod.runtime?.ports) {
+    throw new Error('Pod has no port mappings');
+  }
+
+  // Find SSH port (usually mapped from port 22)
+  const sshPort = pod.runtime.ports.find(p => p.privatePort === 22);
+  if (!sshPort) {
+    throw new Error('No SSH port found on pod');
+  }
+
+  return {
+    sshHost: sshPort.ip,
+    sshPort: sshPort.publicPort,
+  };
+}
+
+/** Bootstrap the worker on a RunPod pod via SSH */
+async function bootstrapWorker(
+  sshHost: string,
+  sshPort: number,
+  projectId: string,
+  onProgress?: ProcessingProgressCallback
+): Promise<void> {
+  const { execSync } = await import('child_process');
+
+  // Create a temporary SSH key if needed
+  const sshKey = process.env.RUNPOD_SSH_KEY_PATH || `${process.env.HOME}/.ssh/id_rsa`;
+
+  // Helper to run SSH commands
+  const ssh = (cmd: string): string => {
+    try {
+      return execSync(
+        `ssh -o StrictHostKeyChecking=no -o ConnectTimeout=10 -p ${sshPort} -i ${sshKey} root@${sshHost} "${cmd}"`,
+        { timeout: 60000, encoding: 'utf-8' }
+      );
+    } catch (err: any) {
+      console.error(`[orchestrator] SSH command failed: ${cmd}`, err.message);
+      throw err;
+    }
+  };
+
+  // Install Node.js
+  onProgress?.({
+    projectId,
+    status: 'processing',
+    stage: 'loading',
+    progress: 4,
+    message: 'Installing Node.js on GPU pod...',
+    metrics: null,
+  });
+
+  ssh('curl -fsSL https://deb.nodesource.com/setup_22.x | bash - && apt-get install -y nodejs');
+
+  // Install Playwright + Chromium deps
+  ssh('npm install -g playwright && npx playwright install chromium && npx playwright install-deps chromium');
+
+  // Create worker directory
+  ssh('mkdir -p /app/frames /app/output /app/src');
+
+  // Upload worker files
+  const workerDir = path.resolve(__dirname, '..', 'runpod-worker');
+  const srcDir = path.resolve(__dirname, '..', '..', 'splat-test', 'src');
+  const workerHtml = path.resolve(__dirname, '..', 'worker.html');
+
+  // Upload via SCP
+  const scp = (local: string, remote: string) => {
+    execSync(
+      `scp -o StrictHostKeyChecking=no -P ${sshPort} -i ${sshKey} -r "${local}" root@${sshHost}:"${remote}"`,
+      { timeout: 120000, encoding: 'utf-8' }
+    );
+  };
+
+  scp(path.join(workerDir, 'server.mjs'), '/app/server.mjs');
+  scp(path.join(workerDir, 'package.json'), '/app/package.json');
+  scp(workerHtml, '/app/worker.html');
+  scp(srcDir, '/app/src');
+
+  // Install deps and start server
+  ssh('cd /app && npm install && nohup node server.mjs > /tmp/worker.log 2>&1 &');
+
+  // Wait for server to start
+  await new Promise(resolve => setTimeout(resolve, 5000));
 }
 
 /** Upload all JPEG frames from a local directory to the RunPod worker */

@@ -1,1 +1,8 @@
-node_modules/\n.env\noutput/\nframes/\njobs/\n*.ply\n*.splat
+node_modules/
+dist/
+api/uploads/
+api/data/
+processing/frames/
+*.db
+.env
+.DS_Store

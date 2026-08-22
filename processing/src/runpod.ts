@@ -78,10 +78,10 @@ export async function launchPod(options: PodOptions = {}): Promise<string> {
     gpuCount = 1,
     containerDiskInGb = 50,
     volumeInGb = 0,
-    imageName = process.env.RUNPOD_DOCKER_IMAGE || 'telosview-runpod-worker:latest',
+    imageName = process.env.RUNPOD_DOCKER_IMAGE || 'runpod/pytorch:1.1.0-cu1281-torch280-ubuntu2204',
     cloudType = 'SECURE',
     name = 'telosview-processor',
-    ports = '8080/http',
+    ports = '22/tcp,8080/http',
     env = {},
   } = options;
 

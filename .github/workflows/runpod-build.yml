@@ -10,7 +10,8 @@ on:
   workflow_dispatch:
 
 env:
-  IMAGE_NAME: ghcr.io/${{ github.repository }}/telosview-runpod-worker
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}-worker
 
 jobs:
   build:
@@ -26,9 +27,18 @@ jobs:
       - name: Log in to GitHub Container Registry
         uses: docker/login-action@v3
         with:
-          registry: ghcr.io
+          registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=raw,value=latest
+            type=sha
 
       - name: Assemble build context
         run: |
@@ -38,8 +48,8 @@ jobs:
           cp processing/runpod-worker/server.mjs build-ctx/
           cp processing/worker.html build-ctx/
           cp -r splat-test/src/* build-ctx/src/
-          echo "Build context:"
-          find build-ctx -type f | head -20
+          echo "Build context files:"
+          find build-ctx -type f | sort
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -49,8 +59,19 @@ jobs:
         with:
           context: build-ctx
           push: true
-          tags: |
-            ${{ env.IMAGE_NAME }}:latest
-            ${{ env.IMAGE_NAME }}:${{ github.sha }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+      - name: Make package public
+        run: |
+          # Wait for package to be registered
+          sleep 10
+          gh api \
+            --method PUT \
+            -H "Accept: application/vnd.github+json" \
+            "/user/packages/container/${{ env.IMAGE_NAME }}/visibility" \
+            -f visibility='public' || echo "Could not set visibility (may need manual setting)"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
