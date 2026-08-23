@@ -40,6 +40,8 @@ jobs:
           mkdir -p build-ctx/src
           cp processing/runpod-worker/Dockerfile build-ctx/
           cp processing/runpod-worker/package.json build-ctx/
+          cp processing/runpod-worker/native-worker.mjs build-ctx/
+          cp processing/runpod-worker/native-test.mjs build-ctx/
           cp processing/runpod-worker/server.mjs build-ctx/
           cp processing/worker.html build-ctx/
           cp -r splat-test/src/* build-ctx/src/
