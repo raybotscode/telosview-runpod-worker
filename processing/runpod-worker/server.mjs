@@ -74,6 +74,79 @@ app.get('/health', (_req, res) => {
   res.json({ status: 'ok', gpu: process.env.NVIDIA_VISIBLE_DEVICES || 'unknown' });
 });
 
+// ── GPU/Vulkan diagnostics ──
+app.get('/diag', async (_req, res) => {
+  const { execSync } = await import('child_process');
+  const diag = {};
+
+  // Environment vars
+  diag.env = {
+    NVIDIA_VISIBLE_DEVICES: process.env.NVIDIA_VISIBLE_DEVICES,
+    NVIDIA_DRIVER_CAPABILITIES: process.env.NVIDIA_DRIVER_CAPABILITIES,
+    VK_ICD_FILENAMES: process.env.VK_ICD_FILENAMES,
+    DISPLAY: process.env.DISPLAY,
+  };
+
+  // Check Vulkan ICD files
+  const icdPaths = [
+    '/usr/share/vulkan/icd.d/nvidia_icd.json',
+    '/etc/vulkan/icd.d/nvidia_icd.json',
+    '/usr/share/vulkan/icd.d/nvidia_layers.json',
+    '/etc/vulkan/icd.d/nvidia_layers.json',
+  ];
+  diag.vulkanIcdFiles = {};
+  for (const p of icdPaths) {
+    try {
+      diag.vulkanIcdFiles[p] = fs.existsSync(p);
+      if (diag.vulkanIcdFiles[p]) {
+        diag.vulkanIcdFiles[p + '_content'] = fs.readFileSync(p, 'utf8').substring(0, 500);
+      }
+    } catch { diag.vulkanIcdFiles[p] = false; }
+  }
+
+  // nvidia-smi
+  try {
+    diag.nvidiaSmi = execSync('nvidia-smi --query-gpu=name,driver_version,memory.total --format=csv,noheader 2>&1', { timeout: 5000 }).toString().trim();
+  } catch (e) { diag.nvidiaSmi = `error: ${e.message}`; }
+
+  // vulkaninfo
+  try {
+    const vkOut = execSync('vulkaninfo --summary 2>&1', { timeout: 10000 }).toString();
+    diag.vulkaninfo = vkOut.substring(0, 2000);
+  } catch (e) { diag.vulkaninfo = `error: ${e.message}`; }
+
+  // Check if /dev/nvidia* exists
+  try {
+    diag.nvidiaDevices = execSync('ls -la /dev/nvidia* 2>&1', { timeout: 3000 }).toString().trim();
+  } catch (e) { diag.nvidiaDevices = `error: ${e.message}`; }
+
+  // Quick WebGPU test via Chromium
+  try {
+    const browser = await chromium.launch({
+      headless: true,
+      args: ['--no-sandbox', '--enable-unsafe-webgpu', '--enable-features=Vulkan', '--use-angle=vulkan', '--enable-unsafe-swiftshader'],
+      channel: 'chrome',
+    });
+    const ctx = await browser.newContext();
+    const page = await ctx.newPage();
+    await page.goto('data:text/html,<html><body>test</body></html>');
+    const gpuInfo = await page.evaluate(async () => {
+      try {
+        if (!navigator.gpu) return { error: 'navigator.gpu not available' };
+        const adapter = await navigator.gpu.requestAdapter();
+        if (!adapter) return { error: 'No WebGPU adapter' };
+        const info = adapter.requestAdapterInfo ? await adapter.requestAdapterInfo() : {};
+        return { adapter: info.description || info.device || 'unknown', features: [...adapter.features] };
+      } catch (e) { return { error: e.message }; }
+    });
+    diag.webgpu = gpuInfo;
+    await ctx.close();
+    await browser.close();
+  } catch (e) { diag.webgpu = { error: e.message }; }
+
+  res.json(diag);
+});
+
 // ── Frame upload ──
 
 app.post('/upload-frames/:projectId', upload.array('frames', 500), (req, res) => {
