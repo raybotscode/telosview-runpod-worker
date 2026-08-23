@@ -26,6 +26,20 @@ RUN apt-get update && apt-get install -y \
 # Ensure NVIDIA Vulkan ICD is registered (RunPod mounts the driver)
 ENV NVIDIA_VISIBLE_DEVICES=all
 ENV NVIDIA_DRIVER_CAPABILITIES=compute,utility,graphics
+
+# Create NVIDIA Vulkan ICD manifest — RunPod mounts libGLX_nvidia.so.0 from host
+# but doesn't provide the ICD JSON that Vulkan needs to discover it
+RUN mkdir -p /usr/share/vulkan/icd.d && \
+    echo '{\n\
+    "file_format_version": "1.0.0",\n\
+    "ICD": {\n\
+        "library_path": "/usr/lib/x86_64-linux-gnu/libGLX_nvidia.so.0",\n\
+        "api_version": "1.3.275"\n\
+    }\n\
+}' > /usr/share/vulkan/icd.d/nvidia_icd.json && \
+    mkdir -p /etc/vulkan/icd.d && \
+    cp /usr/share/vulkan/icd.d/nvidia_icd.json /etc/vulkan/icd.d/nvidia_icd.json
+
 ENV VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/nvidia_icd.json
 
 # Set up app directory
