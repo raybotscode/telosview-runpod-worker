@@ -1,0 +1,21 @@
+# API container build context exclusions (Dockerfile.api)
+.git
+.gitignore
+.env
+**/node_modules
+**/dist
+
+# Runtime data (fresh in container / mounted as volumes)
+api/data
+api/uploads
+processing/frames
+processing/output
+
+# Not needed in the API image
+viewer
+splat-test/data
+splat-test/output
+splat-test/jobs
+splat-test/app
+splat-test/server
+docs

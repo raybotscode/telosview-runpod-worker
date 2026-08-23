@@ -1,0 +1,48 @@
+# TelosView API — always-on container image
+# Build context = repo root (needs api/ + processing/ + splat-test/src/).
+# The API shells out to `ffmpeg` (frame extraction) and `runpodctl` (GPU pod
+# orchestration), so both must be present.
+#
+# Usage (example for Fly.io):
+#   fly launch --dockerfile Dockerfile.api --name telosview-api
+#   fly volumes create telosview_data --size 5
+#   # then set secrets: RUNPOD_API_KEY, JWT_SECRET, TELOSVIEW_OPENROUTER_API_KEY
+
+FROM node:22-bookworm-slim
+
+# ffmpeg (frame extraction) + curl (runpodctl download) + build tools for
+# better-sqlite3 in case its prebuilt binary doesn't match this Node version.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ffmpeg ca-certificates curl python3 make g++ \
+    && rm -rf /var/lib/apt/lists/*
+
+# runpodctl CLI (REST v2) — the orchestrator launches GPU pods through this.
+RUN curl -sL https://github.com/runpod/runpodctl/releases/latest/download/runpodctl-linux-amd64 \
+    -o /usr/local/bin/runpodctl && chmod +x /usr/local/bin/runpodctl
+
+WORKDIR /app
+
+# Install API deps first (layer cache). Skip Playwright's Chromium download
+# (~200MB, unused — the native Dawn worker runs on the GPU pod, not here).
+ENV PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1
+COPY api/package.json api/package-lock.json ./api/
+RUN cd api && npm install --no-audit --no-fund
+
+# Copy the monorepo pieces the API imports and serves.
+COPY api/ ./api/
+COPY processing/ ./processing/
+COPY splat-test/src/ ./splat-test/src/
+
+# Persistent data dirs (mount a volume here on the host).
+RUN mkdir -p /app/api/data /app/api/uploads /app/processing/frames /app/processing/output
+
+ENV NODE_ENV=production
+ENV PORT=3457
+ENV RUNPODCTL_PATH=/usr/local/bin/runpodctl
+# The default splatSrcDir resolves to /splat-test/src (wrong in-container); override.
+ENV SPLAT_SRC_DIR=/app/splat-test/src
+
+EXPOSE 3457
+
+WORKDIR /app/api
+CMD ["npm", "start"]
