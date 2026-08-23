@@ -84,6 +84,10 @@ const SplatViewer = forwardRef<SplatViewerHandle, SplatViewerProps>(
           splatMesh = new SplatMesh({ url });
           await splatMesh.initialized;
           if (disposed) return;
+          // splat.js trains in OpenCV convention (x right, y down, z forward —
+          // see splat-test/src/sfm/geometry.js). Three.js/Spark use y up, z back,
+          // so without this 180° X rotation the scene renders upside down.
+          splatMesh.rotation.x = Math.PI;
           spark.add(splatMesh);
           setLoading(false);
           onLoad?.({ splatCount: splatMesh.numSplats || 0 });
