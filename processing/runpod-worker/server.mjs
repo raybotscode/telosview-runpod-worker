@@ -91,6 +91,16 @@ app.get('/health', (_req, res) => {
   res.json({ status: 'ok', gpu: process.env.NVIDIA_VISIBLE_DEVICES || 'unknown' });
 });
 
+// ── GPU utilization (live nvidia-smi) ──
+app.get('/gpustat', (_req, res) => {
+  import('child_process').then(({ execSync }) => {
+    try {
+      const out = execSync('nvidia-smi --query-gpu=utilization.gpu,memory.used,memory.total --format=csv,noheader', { timeout: 3000 }).toString().trim();
+      res.json({ gpu: out });
+    } catch (e) { res.json({ error: e.message }); }
+  });
+});
+
 // ── GPU/Vulkan diagnostics ──
 app.get('/diag', async (_req, res) => {
   const { execSync } = await import('child_process');
@@ -421,6 +431,10 @@ async function runProcessing(job, maxIters) {
   try {
     context = await browser.newContext();
     const page = await context.newPage();
+
+    // Forward browser console + errors to worker stdout for debugging
+    page.on('console', (msg) => console.log(`[browser] ${msg.type()}: ${msg.text()}`));
+    page.on('pageerror', (err) => console.log(`[browser-error] ${err.message}`));
 
     // Navigate to worker page (served by this same Express server)
     const workerUrl = `${baseUrl}/worker.html`;
