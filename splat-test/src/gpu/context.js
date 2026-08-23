@@ -24,7 +24,7 @@ export async function createGpu(opts = {}) {
     throw new Error('WebGPU not available in this environment');
   }
   const adapter = await navigator.gpu.requestAdapter({
-    powerPreference: opts.powerPreference || 'low-power',
+    powerPreference: opts.powerPreference || 'high-performance',
   });
   if (!adapter) throw new Error('no WebGPU adapter');
   // full-res training-target buffers can exceed the 128MB default binding

@@ -153,14 +153,13 @@ app.get('/diag', async (_req, res) => {
         '--no-sandbox',
         '--headless=new',
         '--enable-unsafe-webgpu',
-        '--enable-features=Vulkan',
+        '--enable-features=Vulkan,UseSkiaRenderer',
         '--use-angle=vulkan',
-        '--disable-vulkan-surface',
         '--ignore-gpu-blocklist',
         '--disable-gpu-sandbox',
-        '--enable-dawn-features=allow_unsafe_apis,disable_adapter_blocklist',
-        '--disable-dawn-features=disallow_unsafe_apis',
+        '--disable-dawn-features=adapter_blocklist',
       ],
+      ignoreDefaultArgs: ['--enable-unsafe-swiftshader', '--use-angle=swiftshader-webgl'],
     });
     diag.browserVersion = browser.version();
     diag.browserExecutable = chromium.executablePath();
@@ -173,7 +172,7 @@ app.get('/diag', async (_req, res) => {
     const gpuInfo = await page.evaluate(async () => {
       try {
         if (!navigator.gpu) return { error: 'navigator.gpu is undefined' };
-        const adapter = await navigator.gpu.requestAdapter({ powerPreference: 'low-power' });
+        const adapter = await navigator.gpu.requestAdapter({ powerPreference: 'high-performance' });
         if (!adapter) return { error: 'requestAdapter() returned null (no adapter)' };
         const info = adapter.requestAdapterInfo ? await adapter.requestAdapterInfo() : {};
         return {
@@ -382,13 +381,11 @@ async function runProcessing(job, maxIters) {
     '--no-sandbox',
     '--headless=new',
     '--enable-unsafe-webgpu',
-    '--enable-features=Vulkan',
+    '--enable-features=Vulkan,UseSkiaRenderer',
     '--use-angle=vulkan',
-    '--disable-vulkan-surface',       // offscreen compute only, no swapchain/display
     '--ignore-gpu-blocklist',
     '--disable-gpu-sandbox',
-    '--enable-dawn-features=allow_unsafe_apis,disable_adapter_blocklist',
-    '--disable-dawn-features=disallow_unsafe_apis',
+    '--disable-dawn-features=adapter_blocklist',
     '--disable-dev-shm-usage',
   ];
 
@@ -401,10 +398,13 @@ async function runProcessing(job, maxIters) {
   try {
     // channel:'chromium' forces the full Chromium build (new headless mode).
     // The default headless shell (chrome-headless-shell) does NOT support WebGPU.
+    // ignoreDefaultArgs strips Playwright's injected SwiftShader/software fallbacks
+    // that would otherwise override our Vulkan flags.
     browser = await chromium.launch({
       headless: true,
       channel: 'chromium',
       args,
+      ignoreDefaultArgs: ['--enable-unsafe-swiftshader', '--use-angle=swiftshader-webgl'],
     });
   } catch (err) {
     console.log(`[worker] Full Chromium failed, trying with SwiftShader only: ${err.message}`);
@@ -429,7 +429,7 @@ async function runProcessing(job, maxIters) {
     const gpuCheck = await page.evaluate(async () => {
       try {
         if (!navigator.gpu) return { error: 'navigator.gpu not available' };
-        const adapter = await navigator.gpu.requestAdapter({ powerPreference: 'low-power' });
+        const adapter = await navigator.gpu.requestAdapter({ powerPreference: 'high-performance' });
         if (!adapter) return { error: 'No WebGPU adapter' };
         const info = adapter.requestAdapterInfo ? await adapter.requestAdapterInfo() : {};
         return {
