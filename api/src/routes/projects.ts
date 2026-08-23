@@ -308,7 +308,7 @@ router.post('/:id/process', (req: Request, res: Response) => {
     if (result.success && result.plyPath) {
       // For now, store the local path as the splat URL
       // In production, this would be an R2 URL after upload
-      updateProjectSplatUrl(projectId, `/api/projects/${projectId}/ply`);
+      updateProjectSplatUrl(projectId, `/api/projects/${projectId}/model.ply`);
       broadcastProgress(projectId, {
         type: 'complete',
         projectId,
@@ -337,8 +337,11 @@ router.post('/:id/process', (req: Request, res: Response) => {
   });
 });
 
-// GET /api/projects/:id/ply — download PLY file
-router.get('/:id/ply', (req: Request, res: Response) => {
+// GET /api/projects/:id/model.ply — download PLY file
+// The path MUST end in `.ply` (or `.splat`/`.spz`): Spark's SplatMesh infers the
+// file format from the URL extension and throws "Unable to determine file type"
+// on a bare `/ply` path. Kept a legacy `/:id/ply` alias for older records.
+const downloadPly = (req: Request, res: Response) => {
   const projectId = req.params.id;
   const plyPath = path.resolve(
     import.meta.dirname, '..', '..', '..', 'processing', 'output', `${projectId}.ply`
@@ -350,7 +353,9 @@ router.get('/:id/ply', (req: Request, res: Response) => {
   }
 
   res.download(plyPath, `${projectId}.ply`);
-});
+};
+router.get('/:id/model.ply', downloadPly);
+router.get('/:id/ply', downloadPly);
 
 // POST /api/projects/:id/analyze — trigger AI scene analysis
 router.post('/:id/analyze', async (req: Request, res: Response) => {
