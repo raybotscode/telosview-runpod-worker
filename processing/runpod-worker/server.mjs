@@ -101,6 +101,30 @@ app.get('/gpustat', (_req, res) => {
   });
 });
 
+// ── Native Dawn WebGPU test (the pivot from Chromium) ──
+app.get('/native', async (_req, res) => {
+  try {
+    const { create, globals } = await import('webgpu');
+    Object.assign(globalThis, globals);
+    const gpu = create(['backend=vulkan']);
+    const adapter = await gpu.requestAdapter({ powerPreference: 'high-performance' });
+    if (!adapter) return res.json({ adapter: null, note: 'no adapter' });
+    const info = adapter.info || {};
+    const device = await adapter.requestDevice();
+    const out = {
+      vendor: info.vendor || 'unknown',
+      architecture: info.architecture || 'unknown',
+      description: info.description || 'unknown',
+      isFallbackAdapter: adapter.isFallbackAdapter ?? null,
+      maxStorageBufferBindingSize: adapter.limits?.maxStorageBufferBindingSize ?? null,
+      deviceCreated: !!device,
+    };
+    res.json(out);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // ── GPU/Vulkan diagnostics ──
 app.get('/diag', async (_req, res) => {
   const { execSync } = await import('child_process');
