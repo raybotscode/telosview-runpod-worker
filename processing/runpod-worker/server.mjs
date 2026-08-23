@@ -171,7 +171,6 @@ app.get('/diag', async (_req, res) => {
         '--enable-unsafe-webgpu',
         '--enable-features=Vulkan',
         '--use-angle=vulkan',
-        '--disable-vulkan-surface',
         '--ignore-gpu-blocklist',
         '--disable-gpu-sandbox',
         '--enable-dawn-features=allow_unsafe_apis',
@@ -210,9 +209,19 @@ app.get('/diag', async (_req, res) => {
       await page.goto('chrome://gpu');
       await page.waitForTimeout(1500);
       const gpuText = await page.evaluate(() => {
-        // innerText excludes <style> CSS and includes shadow-DOM rendered text
-        const full = document.body.innerText || '';
-        return full;
+        // Recursively collect text from shadow DOM, skipping <style>/<script>
+        function collect(node, out) {
+          for (const child of node.childNodes) {
+            if (child.nodeType === 3) { out.push(child.textContent); }
+            else if (child.nodeType === 1 && child.tagName !== 'STYLE' && child.tagName !== 'SCRIPT') {
+              collect(child, out);
+              if (child.shadowRoot) collect(child.shadowRoot, out);
+            }
+          }
+        }
+        const out = [];
+        collect(document.body, out);
+        return out.join(' ').replace(/\s+/g, ' ').substring(0, 10000);
       });
       diag.chromeGpu = (gpuText || '(empty)').substring(0, 6000);
       // Also extract the key sections separately for easier parsing
@@ -401,7 +410,6 @@ async function runProcessing(job, maxIters) {
     '--enable-unsafe-webgpu',
     '--enable-features=Vulkan',
     '--use-angle=vulkan',
-    '--disable-vulkan-surface',
     '--ignore-gpu-blocklist',
     '--disable-gpu-sandbox',
     '--enable-dawn-features=allow_unsafe_apis',
