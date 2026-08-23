@@ -111,21 +111,25 @@ app.get('/diag', async (_req, res) => {
 
   // vulkaninfo
   try {
-    const vkOut = execSync('vulkaninfo --summary 2>&1', { timeout: 10000 }).toString();
+    const vkOut = execSync('VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/nvidia_icd.json vulkaninfo --summary 2>&1', { timeout: 10000 }).toString();
     diag.vulkaninfo = vkOut.substring(0, 2000);
-  } catch (e) { diag.vulkaninfo = `error: ${e.message}`; }
+  } catch (e) { diag.vulkaninfo = `error: ${e.message}\n${e.stderr || ''}`.substring(0, 1000); }
 
-  // Check if /dev/nvidia* exists
+  // Check if libGLX_nvidia exists
   try {
-    diag.nvidiaDevices = execSync('ls -la /dev/nvidia* 2>&1', { timeout: 3000 }).toString().trim();
-  } catch (e) { diag.nvidiaDevices = `error: ${e.message}`; }
+    diag.nvidiaLib = execSync('ls -la /usr/lib/x86_64-linux-gnu/libGLX_nvidia.so* 2>&1', { timeout: 3000 }).toString().trim();
+  } catch (e) { diag.nvidiaLib = `error: ${e.message}`; }
 
-  // Quick WebGPU test via Chromium
+  // Check Vulkan loader
+  try {
+    diag.vulkanLoader = execSync('ls -la /usr/lib/x86_64-linux-gnu/libvulkan* 2>&1', { timeout: 3000 }).toString().trim();
+  } catch (e) { diag.vulkanLoader = `error: ${e.message}`; }
+
+  // Quick WebGPU test via Chromium (use bundled, not system Chrome)
   try {
     const browser = await chromium.launch({
       headless: true,
-      args: ['--no-sandbox', '--enable-unsafe-webgpu', '--enable-features=Vulkan', '--use-angle=vulkan', '--enable-unsafe-swiftshader'],
-      channel: 'chrome',
+      args: ['--no-sandbox', '--enable-unsafe-webgpu', '--enable-features=Vulkan', '--use-angle=vulkan', '--enable-unsafe-swiftshader', '--disable-gpu-sandbox'],
     });
     const ctx = await browser.newContext();
     const page = await ctx.newPage();
@@ -326,16 +330,17 @@ async function runProcessing(job, maxIters) {
 
   let browser;
   try {
-    // Use system Chrome (installed via apt in Dockerfile)
+    // Use Playwright's bundled Chromium (system Chrome not installed in container)
     browser = await chromium.launch({
       headless: true,
       args,
-      channel: 'chrome',
     });
   } catch (err) {
-    // Fallback to Playwright's bundled Chromium
-    console.log(`[worker] System Chromium failed, trying bundled: ${err.message}`);
-    browser = await chromium.launch({ headless: true, args });
+    console.log(`[worker] Bundled Chromium failed, trying with SwiftShader only: ${err.message}`);
+    browser = await chromium.launch({
+      headless: true,
+      args: ['--no-sandbox', '--enable-unsafe-swiftshader', '--disable-dev-shm-usage'],
+    });
   }
 
   let context;
@@ -347,6 +352,23 @@ async function runProcessing(job, maxIters) {
     const workerUrl = `${baseUrl}/worker.html`;
     console.log(`[worker] Navigating to ${workerUrl}`);
     await page.goto(workerUrl, { waitUntil: 'domcontentloaded' });
+
+    // Check what WebGPU adapter we got
+    const gpuCheck = await page.evaluate(async () => {
+      try {
+        if (!navigator.gpu) return { error: 'navigator.gpu not available' };
+        const adapter = await navigator.gpu.requestAdapter({ powerPreference: 'high-performance' });
+        if (!adapter) return { error: 'No WebGPU adapter' };
+        const info = adapter.requestAdapterInfo ? await adapter.requestAdapterInfo() : {};
+        return {
+          adapter: info.description || info.device || 'unknown',
+          vendor: info.vendor || 'unknown',
+          features: [...adapter.features],
+          limits: { maxStorageBufferBindingSize: adapter.limits.maxStorageBufferBindingSize },
+        };
+      } catch (e) { return { error: e.message }; }
+    });
+    console.log(`[worker] WebGPU adapter: ${JSON.stringify(gpuCheck)}`);
 
     // Wait for worker to be ready
     updateJob(job, 'loading', 5, 'Worker page loaded, waiting for init...');
