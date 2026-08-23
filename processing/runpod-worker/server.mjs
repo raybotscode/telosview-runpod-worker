@@ -139,10 +139,11 @@ app.get('/diag', async (_req, res) => {
     diag.vulkanLoader = execSync('ls -la /usr/lib/x86_64-linux-gnu/libvulkan* 2>&1', { timeout: 3000 }).toString().trim();
   } catch (e) { diag.vulkanLoader = `error: ${e.message}`; }
 
-  // Quick WebGPU test via Chromium (use bundled, not system Chrome)
+  // Quick WebGPU test via Chromium (channel:'chromium' = full build w/ WebGPU; default headless shell has none)
   try {
     const browser = await chromium.launch({
       headless: true,
+      channel: 'chromium',
       args: ['--no-sandbox', '--enable-unsafe-webgpu', '--enable-features=Vulkan', '--use-angle=vulkan', '--enable-unsafe-swiftshader', '--disable-gpu-sandbox'],
     });
     const ctx = await browser.newContext();
@@ -344,15 +345,18 @@ async function runProcessing(job, maxIters) {
 
   let browser;
   try {
-    // Use Playwright's bundled Chromium (system Chrome not installed in container)
+    // channel:'chromium' forces the full Chromium build (new headless mode).
+    // The default headless shell (chrome-headless-shell) does NOT support WebGPU.
     browser = await chromium.launch({
       headless: true,
+      channel: 'chromium',
       args,
     });
   } catch (err) {
-    console.log(`[worker] Bundled Chromium failed, trying with SwiftShader only: ${err.message}`);
+    console.log(`[worker] Full Chromium failed, trying with SwiftShader only: ${err.message}`);
     browser = await chromium.launch({
       headless: true,
+      channel: 'chromium',
       args: ['--no-sandbox', '--enable-unsafe-swiftshader', '--disable-dev-shm-usage'],
     });
   }

@@ -39,10 +39,10 @@ COPY package.json ./
 RUN npm install
 
 # Install Playwright Chromium + its system deps
+# 'npx playwright install chromium' installs BOTH the full Chromium build
+# (supports WebGPU) AND chrome-headless-shell (old headless, no WebGPU).
+# server.mjs uses channel:'chromium' to select the full build.
 RUN npx playwright install-deps chromium && npx playwright install chromium
-
-# Tell Playwright to prefer its bundled Chromium (has proper GPU support)
-ENV PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH=""
 
 # Copy worker files
 COPY server.mjs ./
