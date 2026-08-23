@@ -22,6 +22,7 @@ RUN apt-get update && apt-get install -y \
     fonts-liberation fonts-noto-color-emoji \
     libnspr4 \
     libegl1 libgl1-mesa-glx libgles2 \
+    xvfb x11-utils \
     && apt-get clean && rm -rf /var/lib/apt/lists/*
 
 # Ensure NVIDIA Vulkan ICD is registered (RunPod mounts the driver)
@@ -59,5 +60,7 @@ EXPOSE 8080
 HEALTHCHECK --interval=30s --timeout=5s --retries=3 \
     CMD curl -f http://localhost:8080/health || exit 1
 
-# Start the worker server
-CMD ["node", "server.mjs"]
+# Start the worker server inside a virtual display (Xvfb) — Chromium's WebGPU/Vulkan
+# backend needs a DISPLAY to initialize surface/swapchain, even for headless compute.
+# Without it Dawn falls back to SwiftShader (software, ~100x slower).
+CMD ["/bin/bash", "-c", "Xvfb :99 -screen 0 1920x1080x24 -nolisten tcp & export DISPLAY=:99 && node server.mjs"]

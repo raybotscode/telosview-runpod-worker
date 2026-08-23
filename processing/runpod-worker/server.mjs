@@ -34,6 +34,12 @@ if (process.env.NVIDIA_VISIBLE_DEVICES === 'void' || !process.env.NVIDIA_VISIBLE
 if (!process.env.NVIDIA_DRIVER_CAPABILITIES) {
   process.env.NVIDIA_DRIVER_CAPABILITIES = 'compute,utility,graphics';
 }
+// Ensure a DISPLAY is set (Xvfb is started in the Dockerfile CMD). Chromium's
+// WebGPU/Vulkan backend needs it to init surface/swapchain even for compute.
+if (!process.env.DISPLAY) {
+  process.env.DISPLAY = ':99';
+  console.log('[worker] Set DISPLAY=:99 (was unset)');
+}
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -94,7 +100,6 @@ app.get('/diag', async (_req, res) => {
   diag.env = {
     NVIDIA_VISIBLE_DEVICES: process.env.NVIDIA_VISIBLE_DEVICES,
     NVIDIA_DRIVER_CAPABILITIES: process.env.NVIDIA_DRIVER_CAPABILITIES,
-    VK_ICD_FILENAMES: process.env.VK_ICD_FILENAMES,
     DISPLAY: process.env.DISPLAY,
   };
 
