@@ -120,11 +120,14 @@ app.get('/diag', async (_req, res) => {
     diag.nvidiaSmi = execSync('nvidia-smi --query-gpu=name,driver_version,memory.total --format=csv,noheader 2>&1', { timeout: 5000 }).toString().trim();
   } catch (e) { diag.nvidiaSmi = `error: ${e.message}`; }
 
-  // vulkaninfo
+  // vulkaninfo (no VK_ICD_FILENAMES override — let default discovery find RunPod's ICD)
   try {
-    const vkOut = execSync('VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/nvidia_icd.json vulkaninfo --summary 2>&1', { timeout: 10000 }).toString();
-    diag.vulkaninfo = vkOut.substring(0, 2000);
-  } catch (e) { diag.vulkaninfo = `error: ${e.message}\n${e.stderr || ''}`.substring(0, 1000); }
+    const vkOut = execSync('vulkaninfo --summary 2>&1', { timeout: 15000 }).toString();
+    diag.vulkaninfo = vkOut.substring(0, 3000);
+  } catch (e) {
+    // execSync with 2>&1 puts the merged output in e.stdout, not e.stderr
+    diag.vulkaninfo = `error: ${e.message}\n${e.stdout || ''}\n${e.stderr || ''}`.substring(0, 2000);
+  }
 
   // Check if libGLX_nvidia exists
   try {
