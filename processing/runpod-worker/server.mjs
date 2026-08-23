@@ -151,15 +151,15 @@ app.get('/diag', async (_req, res) => {
       channel: 'chromium',
       args: [
         '--no-sandbox',
-        '--disable-gpu-sandbox',
+        '--headless=new',
         '--enable-unsafe-webgpu',
         '--enable-features=Vulkan',
-        '--enable-webgpu-developer-features',
         '--use-angle=vulkan',
-        '--use-vulkan=native',
-        '--enable-gpu',
+        '--disable-vulkan-surface',
         '--ignore-gpu-blocklist',
-        '--enable-unsafe-swiftshader',
+        '--disable-gpu-sandbox',
+        '--enable-dawn-features=allow_unsafe_apis,disable_adapter_blocklist',
+        '--disable-dawn-features=disallow_unsafe_apis',
       ],
     });
     diag.browserVersion = browser.version();
@@ -168,16 +168,17 @@ app.get('/diag', async (_req, res) => {
     const ctx = await browser.newContext();
     const page = await ctx.newPage();
 
-    // 1) Check navigator.gpu on a normal page
-    await page.goto('data:text/html,<html><body>test</body></html>');
+    // 1) Check navigator.gpu — MUST be a secure context (http://localhost, NOT data:)
+    await page.goto(`http://localhost:${PORT}/health`);
     const gpuInfo = await page.evaluate(async () => {
       try {
         if (!navigator.gpu) return { error: 'navigator.gpu is undefined' };
-        const adapter = await navigator.gpu.requestAdapter();
+        const adapter = await navigator.gpu.requestAdapter({ powerPreference: 'low-power' });
         if (!adapter) return { error: 'requestAdapter() returned null (no adapter)' };
         const info = adapter.requestAdapterInfo ? await adapter.requestAdapterInfo() : {};
         return {
           ok: true,
+          isFallbackAdapter: adapter.isFallbackAdapter,
           description: info.description || 'unknown',
           vendor: info.vendor || 'unknown',
           architecture: info.architecture || 'unknown',
@@ -369,16 +370,16 @@ async function runProcessing(job, maxIters) {
 
   const args = [
     '--no-sandbox',
-    '--disable-gpu-sandbox',
+    '--headless=new',
     '--enable-unsafe-webgpu',
     '--enable-features=Vulkan',
-    '--enable-webgpu-developer-features',
     '--use-angle=vulkan',
-    '--use-vulkan=native',
-    '--enable-gpu',
+    '--disable-vulkan-surface',       // offscreen compute only, no swapchain/display
     '--ignore-gpu-blocklist',
+    '--disable-gpu-sandbox',
+    '--enable-dawn-features=allow_unsafe_apis,disable_adapter_blocklist',
+    '--disable-dawn-features=disallow_unsafe_apis',
     '--disable-dev-shm-usage',
-    '--enable-unsafe-swiftshader',  // fallback if GPU fails
   ];
 
   // On a real GPU server, we do NOT add --use-vulkan=swiftshader

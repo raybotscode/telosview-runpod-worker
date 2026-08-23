@@ -90,7 +90,7 @@ export async function gpuMatchAll(feats, pairs, ratio = 0.8, log = () => {}, ext
   const t0 = performance.now();
   let device = extDevice, ownDevice = false;
   if (!device) {
-    const adapter = await navigator.gpu.requestAdapter({ powerPreference: 'high-performance' });
+    const adapter = await navigator.gpu.requestAdapter({ powerPreference: 'low-power' });
     if (!adapter) throw new Error('no WebGPU adapter');
     device = await adapter.requestDevice();
     ownDevice = true;

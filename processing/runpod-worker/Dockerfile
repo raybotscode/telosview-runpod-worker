@@ -62,5 +62,6 @@ HEALTHCHECK --interval=30s --timeout=5s --retries=3 \
 
 # Start the worker server inside a virtual display (Xvfb) — Chromium's WebGPU/Vulkan
 # backend needs a DISPLAY to initialize surface/swapchain, even for headless compute.
-# Without it Dawn falls back to SwiftShader (software, ~100x slower).
-CMD ["/bin/bash", "-c", "Xvfb :99 -screen 0 1920x1080x24 -nolisten tcp & export DISPLAY=:99 && node server.mjs"]
+# dbus must also be up (Chromium GPU process talks to it). Dawn's blocklist (which
+# rejects NVIDIA 570+) is disabled via flags in server.mjs.
+CMD ["/bin/bash", "-c", "/etc/init.d/dbus start 2>/dev/null; Xvfb :99 -screen 0 1920x1080x24 -nolisten tcp & export DISPLAY=:99 && node server.mjs"]
