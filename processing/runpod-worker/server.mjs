@@ -24,6 +24,17 @@ import fs from 'fs';
 import { fileURLToPath } from 'url';
 import { chromium } from 'playwright';
 
+// CRITICAL: RunPod forces NVIDIA_VISIBLE_DEVICES=void which hides the GPU from
+// CUDA/Vulkan. nvidia-smi still works (direct driver access) so the GPU IS there.
+// Override before any GPU code runs.
+if (process.env.NVIDIA_VISIBLE_DEVICES === 'void' || !process.env.NVIDIA_VISIBLE_DEVICES) {
+  process.env.NVIDIA_VISIBLE_DEVICES = 'all';
+  console.log('[worker] Overrode NVIDIA_VISIBLE_DEVICES=void → all');
+}
+if (!process.env.NVIDIA_DRIVER_CAPABILITIES) {
+  process.env.NVIDIA_DRIVER_CAPABILITIES = 'compute,utility,graphics';
+}
+
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
 const PORT = 8080;
