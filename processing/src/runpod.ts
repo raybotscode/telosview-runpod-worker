@@ -54,10 +54,25 @@ export interface PodInfo {
 
 /**
  * Launch a new GPU pod via runpodctl CLI.
+ *
+ * Uses a fallback chain: RunPod's catalog-level "stock" is not a guarantee that
+ * a specific machine has free capacity ("This machine does not have the
+ * resources to deploy your pod"), so if the primary GPU fails to provision we
+ * try the next candidate. All candidates are NVIDIA + Vulkan-capable — native
+ * Dawn talks to the GPU over Vulkan (not CUDA), so any of them runs splat.js.
+ * Ordered by stock reliability + price.
  */
+const GPU_FALLBACKS = [
+  'NVIDIA GeForce RTX 4090',   // 24GB, High stock, well-tested
+  'NVIDIA A40',                 // 48GB, High stock, cheaper ($0.44/hr)
+  'NVIDIA RTX PRO 4500 Blackwell', // 32GB, High stock
+  'NVIDIA GeForce RTX 3090',   // 24GB, former default
+  'NVIDIA L4',                 // 24GB
+];
+
 export async function launchPod(options: PodOptions = {}): Promise<string> {
   const {
-    gpuTypeId = process.env.RUNPOD_GPU_TYPE || 'NVIDIA GeForce RTX 4090',
+    gpuTypeId,
     gpuCount = 1,
     containerDiskInGb = 50,
     imageName = process.env.RUNPOD_DOCKER_IMAGE || 'raybotsemail/telosview-worker:latest',
@@ -68,10 +83,38 @@ export async function launchPod(options: PodOptions = {}): Promise<string> {
     dockerArgs,
   } = options;
 
+  // Candidate list: explicit option/env override first, then the fallback chain.
+  const candidates: string[] = [];
+  if (gpuTypeId) candidates.push(gpuTypeId);
+  else if (process.env.RUNPOD_GPU_TYPE) candidates.push(process.env.RUNPOD_GPU_TYPE);
+  for (const g of GPU_FALLBACKS) {
+    if (!candidates.includes(g)) candidates.push(g);
+  }
+
+  let lastError = '';
+  for (const gpu of candidates) {
+    try {
+      return await tryCreatePod({
+        gpu, gpuCount, containerDiskInGb, imageName, cloudType, name, ports, env, dockerArgs,
+      });
+    } catch (err: any) {
+      lastError = err.message;
+      console.log(`[runpod] GPU "${gpu}" unavailable, trying next: ${err.message}`);
+    }
+  }
+  throw new Error(`Pod launch failed after trying ${candidates.length} GPU types. Last error: ${lastError}`);
+}
+
+async function tryCreatePod(opts: {
+  gpu: string; gpuCount: number; containerDiskInGb: number; imageName: string;
+  cloudType: string; name: string; ports: string[]; env?: Record<string, string>; dockerArgs?: string;
+}): Promise<string> {
+  const { gpu, gpuCount, containerDiskInGb, imageName, cloudType, name, ports, env, dockerArgs } = opts;
+
   let args = `pod create`;
   args += ` --name "${name}"`;
   args += ` --image "${imageName}"`;
-  args += ` --gpu-id "${gpuTypeId}"`;
+  args += ` --gpu-id "${gpu}"`;
   args += ` --gpu-count ${gpuCount}`;
   args += ` --container-disk-in-gb ${containerDiskInGb}`;
   args += ` --ports "${ports.join(',')}"`;
@@ -94,9 +137,9 @@ export async function launchPod(options: PodOptions = {}): Promise<string> {
   }
   if (!pod || !pod.id) {
     const msg = pod?.error || output;
-    throw new Error(`Pod launch failed (GPU "${gpuTypeId}" may be unavailable): ${msg}`);
+    throw new Error(`Pod launch failed (GPU "${gpu}" may be unavailable): ${msg}`);
   }
-  console.log(`[runpod] Launched pod ${pod.id} (status: ${pod.desiredStatus})`);
+  console.log(`[runpod] Launched pod ${pod.id} on "${gpu}" (status: ${pod.desiredStatus})`);
   return pod.id;
 }
 
