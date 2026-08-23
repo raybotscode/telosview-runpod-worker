@@ -61,7 +61,10 @@ RUN npm install
 # server.mjs uses channel:'chromium' to select the full build.
 RUN npx playwright install-deps chromium && npx playwright install chromium
 
-# Copy worker files
+# Copy worker files (native-worker.mjs is the active worker — runs splat.js via
+# native Dawn `webgpu`; server.mjs is the retired Chromium worker, kept for reference)
+COPY native-worker.mjs ./
+COPY native-test.mjs ./
 COPY server.mjs ./
 COPY worker.html ./
 COPY src/ ./src/
@@ -76,8 +79,6 @@ EXPOSE 8080
 HEALTHCHECK --interval=30s --timeout=5s --retries=3 \
     CMD curl -f http://localhost:8080/health || exit 1
 
-# Start the worker server inside a virtual display (Xvfb) — Chromium's WebGPU/Vulkan
-# backend needs a DISPLAY to initialize surface/swapchain, even for headless compute.
-# dbus must also be up (Chromium GPU process talks to it). Dawn's blocklist (which
-# rejects NVIDIA 570+) is disabled via flags in server.mjs.
-CMD ["/bin/bash", "-c", "/etc/init.d/dbus start 2>/dev/null; Xvfb :99 -screen 0 1920x1080x24 -nolisten tcp & export DISPLAY=:99 && node server.mjs"]
+# Native Dawn talks to the NVIDIA GPU through Vulkan directly — no Chromium,
+# no Xvfb, no dbus needed.
+CMD ["node", "native-worker.mjs"]
