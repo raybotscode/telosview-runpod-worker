@@ -25,6 +25,15 @@ RUN apt-get update && apt-get install -y \
     xvfb x11-utils \
     && apt-get clean && rm -rf /var/lib/apt/lists/*
 
+# Upgrade Vulkan loader to 1.4+ via LunarG (Ubuntu 22.04 ships 1.3.204, which
+# rejects NVIDIA 570+ drivers that declare Vulkan 1.4). Chromium's Dawn/WebGPU
+# uses the system loader, so this is required for WebGPU to see the NVIDIA GPU.
+RUN apt-get update && apt-get install -y wget gnupg && \
+    wget -qO - https://packages.lunarg.com/lunarg-signing-key-pub.asc | gpg --dearmor -o /usr/share/keyrings/lunarg.gpg && \
+    echo "deb [signed-by=/usr/share/keyrings/lunarg.gpg] https://packages.lunarg.com/vulkan lunarg-vulkan-jammy main" > /etc/apt/sources.list.d/lunarg-vulkan.list && \
+    apt-get update && apt-get install -y libvulkan1 vulkan-tools && \
+    apt-get clean && rm -rf /var/lib/apt/lists/*
+
 # Ensure NVIDIA Vulkan ICD is registered (RunPod mounts the driver)
 # NOTE: RunPod's base image already ships a correct ICD at
 # /etc/vulkan/icd.d/nvidia_icd.json (api_version 1.4.312). Do NOT override
