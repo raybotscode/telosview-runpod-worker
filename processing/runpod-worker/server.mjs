@@ -188,15 +188,25 @@ app.get('/diag', async (_req, res) => {
     });
     diag.webgpu = gpuInfo;
 
-    // 2) Dump chrome://gpu to see the real GPU feature status
+    // 2) Dump chrome://gpu — extract Problems Detected + Driver Info + command line
     try {
       await page.goto('chrome://gpu');
-      await page.waitForTimeout(1000);
+      await page.waitForTimeout(1500);
       const gpuText = await page.evaluate(() => {
-        const infoView = document.querySelector('info-view');
-        return infoView ? infoView.shadowRoot?.textContent?.substring(0, 4000) : document.body.innerText.substring(0, 4000);
+        // innerText excludes <style> CSS and includes shadow-DOM rendered text
+        const full = document.body.innerText || '';
+        return full;
       });
-      diag.chromeGpu = gpuText || '(empty)';
+      diag.chromeGpu = (gpuText || '(empty)').substring(0, 6000);
+      // Also extract the key sections separately for easier parsing
+      const pick = (label) => {
+        const i = gpuText.indexOf(label);
+        return i >= 0 ? gpuText.substring(i, i + 1200) : null;
+      };
+      diag.problems = pick('Problems Detected');
+      diag.driverInfo = pick('Driver Information');
+      diag.vulkanInfo = pick('Vulkan information') || pick('Vulkan Information');
+      diag.logMessages = pick('Log Messages');
     } catch (e) {
       diag.chromeGpu = `error reading chrome://gpu: ${e.message}`;
     }
@@ -419,7 +429,7 @@ async function runProcessing(job, maxIters) {
     const gpuCheck = await page.evaluate(async () => {
       try {
         if (!navigator.gpu) return { error: 'navigator.gpu not available' };
-        const adapter = await navigator.gpu.requestAdapter({ powerPreference: 'high-performance' });
+        const adapter = await navigator.gpu.requestAdapter({ powerPreference: 'low-power' });
         if (!adapter) return { error: 'No WebGPU adapter' };
         const info = adapter.requestAdapterInfo ? await adapter.requestAdapterInfo() : {};
         return {
