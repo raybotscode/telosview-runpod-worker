@@ -139,26 +139,62 @@ app.get('/diag', async (_req, res) => {
     diag.vulkanLoader = execSync('ls -la /usr/lib/x86_64-linux-gnu/libvulkan* 2>&1', { timeout: 3000 }).toString().trim();
   } catch (e) { diag.vulkanLoader = `error: ${e.message}`; }
 
-  // Quick WebGPU test via Chromium (channel:'chromium' = full build w/ WebGPU; default headless shell has none)
+  // Comprehensive WebGPU test via full Chromium (channel:'chromium' = new headless w/ GPU)
   try {
     const browser = await chromium.launch({
       headless: true,
       channel: 'chromium',
-      args: ['--no-sandbox', '--enable-unsafe-webgpu', '--enable-features=Vulkan', '--use-angle=vulkan', '--enable-unsafe-swiftshader', '--disable-gpu-sandbox'],
+      args: [
+        '--no-sandbox',
+        '--disable-gpu-sandbox',
+        '--enable-unsafe-webgpu',
+        '--enable-features=Vulkan',
+        '--enable-webgpu-developer-features',
+        '--use-angle=vulkan',
+        '--use-vulkan=native',
+        '--enable-gpu',
+        '--ignore-gpu-blocklist',
+        '--enable-unsafe-swiftshader',
+      ],
     });
+    diag.browserVersion = browser.version();
+    diag.browserExecutable = chromium.executablePath();
+
     const ctx = await browser.newContext();
     const page = await ctx.newPage();
+
+    // 1) Check navigator.gpu on a normal page
     await page.goto('data:text/html,<html><body>test</body></html>');
     const gpuInfo = await page.evaluate(async () => {
       try {
-        if (!navigator.gpu) return { error: 'navigator.gpu not available' };
+        if (!navigator.gpu) return { error: 'navigator.gpu is undefined' };
         const adapter = await navigator.gpu.requestAdapter();
-        if (!adapter) return { error: 'No WebGPU adapter' };
+        if (!adapter) return { error: 'requestAdapter() returned null (no adapter)' };
         const info = adapter.requestAdapterInfo ? await adapter.requestAdapterInfo() : {};
-        return { adapter: info.description || info.device || 'unknown', features: [...adapter.features] };
+        return {
+          ok: true,
+          description: info.description || 'unknown',
+          vendor: info.vendor || 'unknown',
+          architecture: info.architecture || 'unknown',
+          features: [...adapter.features].slice(0, 20),
+        };
       } catch (e) { return { error: e.message }; }
     });
     diag.webgpu = gpuInfo;
+
+    // 2) Dump chrome://gpu to see the real GPU feature status
+    try {
+      await page.goto('chrome://gpu');
+      await page.waitForTimeout(1000);
+      const gpuText = await page.evaluate(() => {
+        const infoView = document.querySelector('info-view');
+        return infoView ? infoView.shadowRoot?.textContent?.substring(0, 4000) : document.body.innerText.substring(0, 4000);
+      });
+      diag.chromeGpu = gpuText || '(empty)';
+    } catch (e) {
+      diag.chromeGpu = `error reading chrome://gpu: ${e.message}`;
+    }
+
     await ctx.close();
     await browser.close();
   } catch (e) { diag.webgpu = { error: e.message }; }
@@ -327,15 +363,17 @@ async function runProcessing(job, maxIters) {
   broadcastSSE(job);
 
   const args = [
+    '--no-sandbox',
+    '--disable-gpu-sandbox',
     '--enable-unsafe-webgpu',
     '--enable-features=Vulkan',
     '--enable-webgpu-developer-features',
-    '--disable-gpu-sandbox',
-    '--no-sandbox',
+    '--use-angle=vulkan',
+    '--use-vulkan=native',
+    '--enable-gpu',
+    '--ignore-gpu-blocklist',
     '--disable-dev-shm-usage',
-    '--disable-gpu-driver-bug-workarounds',
     '--enable-unsafe-swiftshader',  // fallback if GPU fails
-    '--use-angle=vulkan',           // try Vulkan first
   ];
 
   // On a real GPU server, we do NOT add --use-vulkan=swiftshader
