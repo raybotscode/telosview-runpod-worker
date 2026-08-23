@@ -2,6 +2,20 @@ import type { Project } from '../types';
 
 const API = import.meta.env.VITE_API_URL || '/api';
 
+/**
+ * Resolve a server-relative path into an absolute URL against the API origin.
+ * The DB stores asset URLs (e.g. splat_url) as `/api/projects/:id/ply`. In
+ * production the viewer is served from a different origin (pages.dev) than the
+ * API (Cloudflare tunnel), so a raw relative path would fetch against the
+ * frontend origin and 404. `VITE_API_URL` already ends in `/api`, so strip a
+ * leading `/api` before prefixing to avoid doubling it.
+ */
+export function resolveApiUrl(path: string): string {
+  if (/^https?:\/\//.test(path)) return path;
+  if (path.startsWith('/api/')) return API + path.slice(4);
+  return `${API}${path.startsWith('/') ? path : '/' + path}`;
+}
+
 function getToken(): string | null {
   return localStorage.getItem('token');
 }

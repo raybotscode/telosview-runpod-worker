@@ -3,6 +3,7 @@ dist/
 api/uploads/
 api/data/
 processing/frames/
+processing/output/
 *.db
 .env
 .DS_Store

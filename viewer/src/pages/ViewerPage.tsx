@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams, Link } from 'react-router-dom';
-import { getProject, updateProject, askProject } from '../api/client';
+import { getProject, updateProject, askProject, resolveApiUrl } from '../api/client';
 import type { Project, Hotspot, Tour } from '../types';
 import SplatViewer from '../components/SplatViewer';
 import type { SplatViewerHandle } from '../components/SplatViewer';
@@ -301,7 +301,7 @@ export default function ViewerPage() {
   return (
     <div className="h-screen w-screen relative bg-slate-950">
       {/* 3D Viewer */}
-      <SplatViewer ref={viewerRef} url={project.splat_url} onLoad={handleLoad} />
+      <SplatViewer ref={viewerRef} url={resolveApiUrl(project.splat_url)} onLoad={handleLoad} />
 
       {/* Hotspot 3D layer */}
       <HotspotRenderer
