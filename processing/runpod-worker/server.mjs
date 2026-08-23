@@ -144,6 +144,12 @@ app.get('/diag', async (_req, res) => {
     diag.vulkaninfo = `error: ${e.message}\n${e.stdout || ''}\n${e.stderr || ''}`.substring(0, 2000);
   }
 
+  // Check NVIDIA device supports external memory/semaphore (Dawn rejects adapters without it)
+  try {
+    const extOut = execSync('vulkaninfo 2>/dev/null | grep -iE "external_memory_fd|external_semaphore_fd|external_memory_host|VK_KHR_external" | sort -u', { timeout: 15000 }).toString().trim();
+    diag.vkExternal = extOut || '(none found)';
+  } catch (e) { diag.vkExternal = `error: ${e.message}`; }
+
   // Check if libGLX_nvidia exists
   try {
     diag.nvidiaLib = execSync('ls -la /usr/lib/x86_64-linux-gnu/libGLX_nvidia.so* 2>&1', { timeout: 3000 }).toString().trim();
@@ -163,14 +169,13 @@ app.get('/diag', async (_req, res) => {
         '--no-sandbox',
         '--headless=new',
         '--enable-unsafe-webgpu',
-        '--enable-features=Vulkan,UseSkiaRenderer',
-        '--enable-webgpu-developer-features',
-        '--use-gl=angle',
+        '--enable-features=Vulkan',
         '--use-angle=vulkan',
-        '--disable-software-rasterizer',
+        '--disable-vulkan-surface',
         '--ignore-gpu-blocklist',
         '--disable-gpu-sandbox',
-        '--disable-dawn-features=adapter_blocklist',
+        '--enable-dawn-features=allow_unsafe_apis',
+        '--disable-dawn-features=adapter_blocklist,disallow_unsafe_apis',
       ],
       ignoreDefaultArgs: ['--enable-unsafe-swiftshader', '--use-angle=swiftshader-webgl'],
     });
@@ -394,14 +399,13 @@ async function runProcessing(job, maxIters) {
     '--no-sandbox',
     '--headless=new',
     '--enable-unsafe-webgpu',
-    '--enable-features=Vulkan,UseSkiaRenderer',
-    '--enable-webgpu-developer-features',
-    '--use-gl=angle',
+    '--enable-features=Vulkan',
     '--use-angle=vulkan',
-    '--disable-software-rasterizer',
+    '--disable-vulkan-surface',
     '--ignore-gpu-blocklist',
     '--disable-gpu-sandbox',
-    '--disable-dawn-features=adapter_blocklist',
+    '--enable-dawn-features=allow_unsafe_apis',
+    '--disable-dawn-features=adapter_blocklist,disallow_unsafe_apis',
     '--disable-dev-shm-usage',
   ];
 
