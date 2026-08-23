@@ -14,21 +14,13 @@ function getVideoDuration(videoPath: string): number {
 }
 
 function calculateExtractionRate(duration: number): { fps: string; estimatedFrames: number } {
-  if (duration < 10) {
-    // Extract every frame, cap at 300
-    const fps = '30'; // Assume max 30fps source
-    return { fps, estimatedFrames: Math.min(Math.ceil(duration * 30), 300) };
-  } else if (duration <= 60) {
-    // Every 3rd frame
-    return { fps: '10', estimatedFrames: Math.ceil(duration * 10) };
-  } else if (duration <= 300) {
-    // Every 5th frame (1-5 min)
-    return { fps: '6', estimatedFrames: Math.ceil(duration * 6) };
-  } else {
-    // Every 10th frame (>5 min), cap at 1000
-    const frames = Math.min(Math.ceil(duration * 3), 1000);
-    return { fps: '3', estimatedFrames: frames };
-  }
+  // Target ~60 frames for Gaussian splatting. More frames than this makes the
+  // SfM pairwise matching O(n^2) crawl (89-133 frames = 5-15 min) and blows the
+  // SSE/pod timeouts. 60 frames is plenty of parallax for a good splat.
+  const TARGET_FRAMES = 60;
+  const fps = Math.max(0.1, Math.min(30, TARGET_FRAMES / duration));
+  const estimatedFrames = Math.min(Math.ceil(duration * fps), 90);
+  return { fps: fps.toFixed(2), estimatedFrames };
 }
 
 export async function extractFrames(

@@ -1,5 +1,6 @@
 import { Link } from 'react-router-dom';
 import type { Project, ProjectStatus } from '../types';
+import { formatDate } from '../lib/format';
 
 interface ProjectCardProps {
   project: Project;
@@ -56,7 +57,7 @@ export default function ProjectCard({ project, onDelete }: ProjectCardProps) {
             {project.status}
           </span>
           <span className="text-xs text-slate-500">
-            {new Date(project.created_at).toLocaleDateString()}
+            {formatDate(project.created_at)}
           </span>
         </div>
       </div>

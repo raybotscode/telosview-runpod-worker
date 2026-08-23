@@ -57,7 +57,7 @@ export interface PodInfo {
  */
 export async function launchPod(options: PodOptions = {}): Promise<string> {
   const {
-    gpuTypeId = process.env.RUNPOD_GPU_TYPE || 'NVIDIA GeForce RTX 3090',
+    gpuTypeId = process.env.RUNPOD_GPU_TYPE || 'NVIDIA GeForce RTX 4090',
     gpuCount = 1,
     containerDiskInGb = 50,
     imageName = process.env.RUNPOD_DOCKER_IMAGE || 'raybotsemail/telosview-worker:latest',
@@ -86,7 +86,16 @@ export async function launchPod(options: PodOptions = {}): Promise<string> {
   }
 
   const output = runPodctl(args);
-  const pod = JSON.parse(output);
+  let pod: any;
+  try {
+    pod = JSON.parse(output);
+  } catch {
+    throw new Error(`runpodctl pod create returned non-JSON: ${output}`);
+  }
+  if (!pod || !pod.id) {
+    const msg = pod?.error || output;
+    throw new Error(`Pod launch failed (GPU "${gpuTypeId}" may be unavailable): ${msg}`);
+  }
   console.log(`[runpod] Launched pod ${pod.id} (status: ${pod.desiredStatus})`);
   return pod.id;
 }

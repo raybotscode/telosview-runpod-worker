@@ -196,8 +196,10 @@ router.post('/:id/upload', (req: Request, res: Response) => {
     const videoPath = req.file.path;
     updateProjectVideoPath(projectId, videoPath);
 
-    // Start extraction asynchronously
-    res.json({ message: 'Upload complete, extraction starting', projectId });
+    // Respond with the FULL updated project row. Clients type this as
+    // Project; returning a { message } stub left them rendering
+    // "Created Invalid Date" (created_at missing until the next refetch).
+    res.json(getProject(projectId));
 
     try {
       updateProjectStatus(projectId, 'extracting');

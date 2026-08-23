@@ -126,13 +126,16 @@ app.post('/process', async (req, res) => {
   activeJobs.set(projectId, job);
   res.json({ projectId, status: 'processing', message: 'Processing started' });
 
-  runProcessing(job, framesDir, maxIters).catch((err) => {
+  // Defer the sync file reads so the /process response flushes first (the
+  // synchronous fs.readFileSync for 60+ frames blocks the event loop, which
+  // delays the response and can make the RunPod proxy time out).
+  setImmediate(() => runProcessing(job, framesDir, maxIters).catch((err) => {
     console.error(`[native] processing failed:`, err);
     job.status = 'error';
     job.error = err.message;
     job.message = `Error: ${err.message}`;
     broadcast(job);
-  });
+  }));
 });
 
 app.get('/process/:projectId/progress', (req, res) => {
@@ -157,6 +160,12 @@ app.get('/process/:projectId/result', (req, res) => {
 async function runProcessing(job, framesDir, maxIters) {
   const { projectId } = job;
 
+  // Heartbeat: keep the SSE stream alive through long SfM phases (bundle
+  // adjustment emits no stage/metrics events, so without this the connection
+  // can idle-timeout and the orchestrator sees the pod as dead).
+  const heartbeat = setInterval(() => broadcast(job), 15000);
+
+  try {
   // Load JPEG frames as Buffers
   update(job, 'decode', 5, 'Reading frames...');
   const names = fs.readdirSync(framesDir).filter((n) => /^frame_\d{5}\.jpg$/i.test(n)).sort();
@@ -215,6 +224,9 @@ async function runProcessing(job, framesDir, maxIters) {
   broadcast(job);
   console.log(`[native] Complete: ${plyPath} (${(plyBuf.length / 1024 / 1024).toFixed(1)} MB)`);
   activeJobs.delete(projectId);
+  } finally {
+    clearInterval(heartbeat);
+  }
 }
 
 function update(job, stage, progress, message) { job.stage = stage; job.progress = progress; job.message = message; }

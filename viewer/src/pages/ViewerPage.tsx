@@ -13,6 +13,7 @@ import { useTourPlayback } from '../hooks/useTourPlayback';
 import ChatPanel from '../components/ChatPanel';
 import type { ChatMessage } from '../components/ChatPanel';
 import { parseNavigationIntent, calculateNavigationCamera } from '../lib/navigationEngine';
+import { formatDate } from '../lib/format';
 import * as THREE from 'three';
 
 export default function ViewerPage() {
@@ -396,7 +397,7 @@ export default function ViewerPage() {
             </div>
             <div className="flex justify-between">
               <span className="text-slate-500">Created</span>
-              <span className="text-slate-200">{new Date(project.created_at).toLocaleDateString()}</span>
+              <span className="text-slate-200">{formatDate(project.created_at)}</span>
             </div>
           </div>
         </div>

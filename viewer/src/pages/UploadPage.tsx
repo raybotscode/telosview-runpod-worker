@@ -3,6 +3,7 @@ import { useParams, useNavigate, Link } from 'react-router-dom';
 import { getProject, uploadVideo, processSplat, connectSSE } from '../api/client';
 import type { Project, ProcessingProgress, ExtractionProgress } from '../types';
 import ProgressBar from '../components/ProgressBar';
+import { formatDateTime } from '../lib/format';
 
 export default function UploadPage() {
   const { id } = useParams<{ id: string }>();
@@ -129,7 +130,7 @@ export default function UploadPage() {
 
       <h1 className="text-2xl font-bold text-slate-100 mb-1">{project.name}</h1>
       <p className="text-slate-500 text-sm mb-8">
-        Created {new Date(project.created_at).toLocaleString()}
+        Created {formatDateTime(project.created_at)}
       </p>
 
       {/* Status: created — show upload zone */}
