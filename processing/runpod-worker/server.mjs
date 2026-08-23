@@ -164,7 +164,7 @@ app.get('/diag', async (_req, res) => {
   try {
     const browser = await chromium.launch({
       headless: true,
-      channel: 'chromium',
+      channel: 'chrome',
       args: [
         '--no-sandbox',
         '--headless=new',
@@ -422,7 +422,7 @@ async function runProcessing(job, maxIters) {
     // that would otherwise override our Vulkan flags.
     browser = await chromium.launch({
       headless: true,
-      channel: 'chromium',
+      channel: 'chrome',
       args,
       ignoreDefaultArgs: ['--enable-unsafe-swiftshader', '--use-angle=swiftshader-webgl'],
     });
@@ -430,7 +430,7 @@ async function runProcessing(job, maxIters) {
     console.log(`[worker] Full Chromium failed, trying with SwiftShader only: ${err.message}`);
     browser = await chromium.launch({
       headless: true,
-      channel: 'chromium',
+      channel: 'chrome',
       args: ['--no-sandbox', '--enable-unsafe-swiftshader', '--disable-dev-shm-usage'],
     });
   }

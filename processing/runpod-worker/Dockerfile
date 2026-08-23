@@ -41,6 +41,13 @@ RUN apt-get update && apt-get install -y wget gnupg && \
 ENV NVIDIA_VISIBLE_DEVICES=all
 ENV NVIDIA_DRIVER_CAPABILITIES=compute,utility,graphics
 
+# Install Google Chrome — its ANGLE/Dawn build initializes the Vulkan backend
+# correctly for WebGPU (Playwright's Chromium build falls back to SwiftShader).
+RUN wget -q https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb -O /tmp/chrome.deb && \
+    apt-get update && apt-get install -y /tmp/chrome.deb || apt-get install -y -f && \
+    apt-get clean && rm -rf /var/lib/apt/lists/* /tmp/chrome.deb && \
+    echo "Chrome installed at: $(which google-chrome-stable 2>/dev/null || echo /usr/bin/google-chrome-stable)"
+
 # Set up app directory
 WORKDIR /app
 
