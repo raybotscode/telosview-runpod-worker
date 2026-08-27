@@ -93,7 +93,9 @@ const SplatViewer = forwardRef<SplatViewerHandle, SplatViewerProps>(
           splatMesh.rotation.x = Math.PI;
           spark.add(splatMesh);
           setLoading(false);
-          onLoad?.({ splatCount: splatMesh.numSplats || 0 });
+          const count = splatMesh.numSplats || 0;
+          console.log(`%c✨ Splat loaded: ${count.toLocaleString()} splats (LOD: quality)`, 'color: #f59e0b; font-weight: bold');
+          onLoad?.({ splatCount: count });
         } catch (err) {
           if (!disposed) {
             setError(err instanceof Error ? err.message : 'Failed to load splat');
@@ -121,12 +123,14 @@ const SplatViewer = forwardRef<SplatViewerHandle, SplatViewerProps>(
       const startRendering = () => {
         if (isRendering || disposed) return;
         isRendering = true;
+        console.log('%c🟢 SplatView ACTIVE', 'color: #14b8a6; font-weight: bold');
         frameId = requestAnimationFrame(renderFrame);
       };
 
       const stopRendering = () => {
         isRendering = false;
         cancelAnimationFrame(frameId);
+        console.log('%c⏸️ SplatView IDLE — render paused', 'color: #64748b; font-weight: bold');
       };
 
       const resetIdleTimer = () => {
