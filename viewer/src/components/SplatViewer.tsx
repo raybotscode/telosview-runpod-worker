@@ -5,7 +5,6 @@ import { SparkRenderer, SplatMesh } from '@sparkjsdev/spark';
 
 export interface SplatViewerHandle {
   scene: THREE.Scene | null;
-  hotspotScene: THREE.Scene | null;
   camera: THREE.PerspectiveCamera | null;
   renderer: THREE.WebGLRenderer | null;
   controls: OrbitControls | null;
@@ -17,6 +16,8 @@ interface SplatViewerProps {
   onLoad?: (info: { splatCount: number }) => void;
 }
 
+const IDLE_TIMEOUT_MS = 3000; // pause render loop after 3s of no interaction
+
 const SplatViewer = forwardRef<SplatViewerHandle, SplatViewerProps>(
   ({ url, onLoad }, ref) => {
     const containerRef = useRef<HTMLDivElement>(null);
@@ -25,14 +26,12 @@ const SplatViewer = forwardRef<SplatViewerHandle, SplatViewerProps>(
 
     // Store Three.js objects in refs so the imperative handle can expose them
     const sceneRef = useRef<THREE.Scene | null>(null);
-    const hotspotSceneRef = useRef<THREE.Scene | null>(null);
     const cameraRef = useRef<THREE.PerspectiveCamera | null>(null);
     const rendererRef = useRef<THREE.WebGLRenderer | null>(null);
     const controlsRef = useRef<OrbitControls | null>(null);
 
     useImperativeHandle(ref, () => ({
       get scene() { return sceneRef.current; },
-      get hotspotScene() { return hotspotSceneRef.current; },
       get camera() { return cameraRef.current; },
       get renderer() { return rendererRef.current; },
       get controls() { return controlsRef.current; },
@@ -55,11 +54,6 @@ const SplatViewer = forwardRef<SplatViewerHandle, SplatViewerProps>(
       const scene = new THREE.Scene();
       sceneRef.current = scene;
 
-      // Separate scene for hotspot overlays — rendered after the main scene
-      // so hotspots always appear on top of the Gaussian splat
-      const hotspotScene = new THREE.Scene();
-      hotspotSceneRef.current = hotspotScene;
-
       // Camera
       const camera = new THREE.PerspectiveCamera(
         60,
@@ -81,7 +75,7 @@ const SplatViewer = forwardRef<SplatViewerHandle, SplatViewerProps>(
       const spark = new SparkRenderer({ renderer });
       scene.add(spark);
 
-      // Load splat
+      // Load splat with LOD for performance
       let splatMesh: SplatMesh | null = null;
       let disposed = false;
 
@@ -89,7 +83,8 @@ const SplatViewer = forwardRef<SplatViewerHandle, SplatViewerProps>(
         try {
           setLoading(true);
           setError(null);
-          splatMesh = new SplatMesh({ url });
+          // LOD: reduce splat count at load time with quality-preserving algorithm
+          splatMesh = new SplatMesh({ url, lod: 'quality' });
           await splatMesh.initialized;
           if (disposed) return;
           // splat.js trains in OpenCV convention (x right, y down, z forward —
@@ -109,14 +104,47 @@ const SplatViewer = forwardRef<SplatViewerHandle, SplatViewerProps>(
 
       loadSplat();
 
-      // Animation loop
-      const animate = () => {
+      // --- Idle-pause render loop ---
+      // Stops rendering after IDLE_TIMEOUT_MS of no interaction.
+      // Resumes immediately on any mouse/touch/scroll/wheel event.
+      let frameId = 0;
+      let idleTimer = 0;
+      let isRendering = false;
+
+      const renderFrame = () => {
         if (disposed) return;
-        requestAnimationFrame(animate);
+        frameId = requestAnimationFrame(renderFrame);
         controls.update();
         renderer.render(scene, camera);
       };
-      animate();
+
+      const startRendering = () => {
+        if (isRendering || disposed) return;
+        isRendering = true;
+        frameId = requestAnimationFrame(renderFrame);
+      };
+
+      const stopRendering = () => {
+        isRendering = false;
+        cancelAnimationFrame(frameId);
+      };
+
+      const resetIdleTimer = () => {
+        clearTimeout(idleTimer);
+        if (!isRendering) startRendering();
+        idleTimer = window.setTimeout(stopRendering, IDLE_TIMEOUT_MS);
+      };
+
+      // Listen for user interactions to reset idle timer
+      const interactionEvents = ['mousedown', 'mousemove', 'touchstart', 'touchmove', 'wheel', 'keydown'];
+      for (const evt of interactionEvents) {
+        container.addEventListener(evt, resetIdleTimer, { passive: true });
+      }
+      // Also listen on window for keyboard events
+      window.addEventListener('keydown', resetIdleTimer, { passive: true });
+
+      // Start rendering immediately
+      startRendering();
 
       // Resize handler
       const onResize = () => {
@@ -125,17 +153,23 @@ const SplatViewer = forwardRef<SplatViewerHandle, SplatViewerProps>(
         camera.aspect = w / h;
         camera.updateProjectionMatrix();
         renderer.setSize(w, h);
+        resetIdleTimer(); // render at least one frame after resize
       };
       window.addEventListener('resize', onResize);
 
       // Cleanup
       return () => {
         disposed = true;
+        stopRendering();
+        clearTimeout(idleTimer);
+        for (const evt of interactionEvents) {
+          container.removeEventListener(evt, resetIdleTimer);
+        }
+        window.removeEventListener('keydown', resetIdleTimer);
         window.removeEventListener('resize', onResize);
         controls.dispose();
         renderer.dispose();
         sceneRef.current = null;
-        hotspotSceneRef.current = null;
         cameraRef.current = null;
         rendererRef.current = null;
         controlsRef.current = null;
