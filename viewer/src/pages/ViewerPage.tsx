@@ -5,6 +5,7 @@ import type { Project, Hotspot, Tour } from '../types';
 import SplatViewer from '../components/SplatViewer';
 import type { SplatViewerHandle } from '../components/SplatViewer';
 import HotspotRenderer from '../components/HotspotRenderer';
+import HotspotOverlays from '../components/HotspotOverlays';
 import HotspotPanel from '../components/HotspotPanel';
 import HotspotEditor from '../components/HotspotEditor';
 import TourControls from '../components/TourControls';
@@ -48,18 +49,17 @@ export default function ViewerPage() {
   const viewerRef = useRef<SplatViewerHandle>(null);
   const [viewerHandle, setViewerHandle] = useState<SplatViewerHandle | null>(null);
 
-  // Poll for viewer handle availability after mount
+  // Poll for viewer handle availability after mount (runs once)
   useEffect(() => {
     const check = () => {
-      if (viewerRef.current?.scene && viewerRef.current !== viewerHandle) {
+      if (viewerRef.current?.scene) {
         setViewerHandle(viewerRef.current);
       }
     };
-    // Check immediately and on a short interval until ready
     check();
     const interval = setInterval(check, 200);
     return () => clearInterval(interval);
-  }, [viewerHandle]);
+  }, []);
 
   // Tour playback
   const [tourState, tourControls] = useTourPlayback(
@@ -74,8 +74,11 @@ export default function ViewerPage() {
     getProject(id)
       .then((p) => {
         setProject(p);
-        setHotspots((p.hotspots as Hotspot[]) || []);
-        setTours((p.tours as Tour[]) || []);
+        // Parse hotspots/tours from JSON string if needed
+        const parsedHotspots = typeof p.hotspots === 'string' ? JSON.parse(p.hotspots) : (p.hotspots || []);
+        const parsedTours = typeof p.tours === 'string' ? JSON.parse(p.tours) : (p.tours || []);
+        setHotspots(parsedHotspots);
+        setTours(parsedTours);
       })
       .catch((err: unknown) => {
         setLoadError(err instanceof Error ? err.message : 'Failed to load project');
@@ -125,10 +128,10 @@ export default function ViewerPage() {
     [id]
   );
 
-  // Hotspot placement
+  // Hotspot placement — convert world space to OpenCV space (negate Y, Z)
   const handlePlaceHotspot = useCallback(
     (position: { x: number; y: number; z: number }) => {
-      setPlacementPos(position);
+      setPlacementPos({ x: position.x, y: -position.y, z: -position.z });
       setPlacementMode(false);
     },
     []
@@ -178,8 +181,9 @@ export default function ViewerPage() {
       const nav = calculateNavigationCamera(hotspot, camera.position);
       const startPos = camera.position.clone();
       const startTarget = controls.target.clone();
-      const endPos = new THREE.Vector3(nav.position.x, nav.position.y, nav.position.z);
-      const endTarget = new THREE.Vector3(nav.target.x, nav.target.y, nav.target.z);
+      // Convert OpenCV space → world space (negate Y, Z)
+      const endPos = new THREE.Vector3(nav.position.x, -nav.position.y, -nav.position.z);
+      const endTarget = new THREE.Vector3(nav.target.x, -nav.target.y, -nav.target.z);
 
       let t = 0;
       const CAMERA_LERP = 0.09;
@@ -304,7 +308,7 @@ export default function ViewerPage() {
       {/* 3D Viewer */}
       <SplatViewer ref={viewerRef} url={resolveApiUrl(project.splat_url)} onLoad={handleLoad} />
 
-      {/* Hotspot 3D layer */}
+      {/* Placement mode raycasting */}
       <HotspotRenderer
         hotspots={hotspots}
         scene={viewerHandle?.scene ?? null}
@@ -312,8 +316,15 @@ export default function ViewerPage() {
         renderer={viewerHandle?.renderer ?? null}
         container={viewerHandle?.container ?? null}
         placementMode={placementMode}
-        onHotspotClick={(h) => { setSelectedHotspot(h); setPlacementMode(false); }}
         onPlaceHotspot={handlePlaceHotspot}
+      />
+
+      {/* HTML hotspot overlays (always on top of splat) */}
+      <HotspotOverlays
+        hotspots={hotspots}
+        camera={viewerHandle?.camera ?? null}
+        container={viewerHandle?.container ?? null}
+        onHotspotClick={(h) => { setSelectedHotspot(h); setPlacementMode(false); }}
       />
 
       {/* Top-left: back button */}
@@ -415,6 +426,8 @@ export default function ViewerPage() {
       <HotspotPanel
         hotspot={selectedHotspot}
         onClose={() => setSelectedHotspot(null)}
+        onEdit={(h) => { setEditingHotspot(h); setSelectedHotspot(null); }}
+        onDelete={handleDeleteHotspot}
       />
 
       {/* Hotspot editor (placement or edit) */}

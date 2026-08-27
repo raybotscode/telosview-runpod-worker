@@ -52,6 +52,20 @@ try {
   db.exec('ALTER TABLE projects ADD COLUMN user_id TEXT REFERENCES users(id)');
 }
 
+// Migration: add hotspots column if missing
+try {
+  db.prepare('SELECT hotspots FROM projects LIMIT 1').get();
+} catch {
+  db.exec('ALTER TABLE projects ADD COLUMN hotspots TEXT');
+}
+
+// Migration: add tours column if missing
+try {
+  db.prepare('SELECT tours FROM projects LIMIT 1').get();
+} catch {
+  db.exec('ALTER TABLE projects ADD COLUMN tours TEXT');
+}
+
 export function createProject(id: string, name: string, description?: string, userId?: string): Project {
   const stmt = db.prepare(
     'INSERT INTO projects (id, name, description, user_id) VALUES (?, ?, ?, ?)'
@@ -102,6 +116,19 @@ export function updateProjectSplatUrl(id: string, splatUrl: string): void {
 export function deleteProject(id: string): boolean {
   const result = db.prepare('DELETE FROM projects WHERE id = ?').run(id);
   return result.changes > 0;
+}
+
+export function updateProjectFields(id: string, fields: Record<string, unknown>): Project | undefined {
+  const allowed = ['name', 'description', 'hotspots', 'tours', 'scene_analysis'];
+  const entries = Object.entries(fields).filter(([k]) => allowed.includes(k));
+  if (entries.length === 0) return getProject(id);
+
+  const sets = entries.map(([k]) => `${k} = ?`);
+  sets.push("updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now')");
+  const values = entries.map(([, v]) => typeof v === 'string' ? v : JSON.stringify(v));
+
+  db.prepare(`UPDATE projects SET ${sets.join(', ')} WHERE id = ?`).run(...values, id);
+  return getProject(id);
 }
 
 export function getProjectSceneAnalysis(id: string): string | null {

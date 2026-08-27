@@ -3,6 +3,8 @@ import type { Hotspot } from '../types';
 interface HotspotPanelProps {
   hotspot: Hotspot | null;
   onClose: () => void;
+  onEdit?: (hotspot: Hotspot) => void;
+  onDelete?: (id: string) => void;
 }
 
 function getVideoEmbedUrl(url: string): string | null {
@@ -19,7 +21,7 @@ function getVideoEmbedUrl(url: string): string | null {
   return null;
 }
 
-export default function HotspotPanel({ hotspot, onClose }: HotspotPanelProps) {
+export default function HotspotPanel({ hotspot, onClose, onEdit, onDelete }: HotspotPanelProps) {
   if (!hotspot) return null;
 
   const embedUrl = hotspot.videoEmbed ? getVideoEmbedUrl(hotspot.videoEmbed) : null;
@@ -58,15 +60,41 @@ export default function HotspotPanel({ hotspot, onClose }: HotspotPanelProps) {
               {hotspot.panelTitle || hotspot.label}
             </h2>
           </div>
-          <button
-            onClick={onClose}
-            className="text-slate-400 hover:text-white transition-colors p-1 rounded hover:bg-slate-700/50"
-            aria-label="Close panel"
-          >
-            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-            </svg>
-          </button>
+          <div className="flex items-center gap-1">
+            {onEdit && (
+              <button
+                onClick={() => onEdit(hotspot)}
+                className="text-slate-400 hover:text-teal-400 transition-colors p-1.5 rounded hover:bg-slate-700/50"
+                aria-label="Edit hotspot"
+                title="Edit"
+              >
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                </svg>
+              </button>
+            )}
+            {onDelete && (
+              <button
+                onClick={() => onDelete(hotspot.id)}
+                className="text-slate-400 hover:text-red-400 transition-colors p-1.5 rounded hover:bg-slate-700/50"
+                aria-label="Delete hotspot"
+                title="Delete"
+              >
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                </svg>
+              </button>
+            )}
+            <button
+              onClick={onClose}
+              className="text-slate-400 hover:text-white transition-colors p-1 rounded hover:bg-slate-700/50"
+              aria-label="Close panel"
+            >
+              <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
         </div>
 
         {/* Content */}

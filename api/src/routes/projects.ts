@@ -12,6 +12,7 @@ import {
   updateProjectVideoPath,
   updateProjectFrameCount,
   updateProjectSplatUrl,
+  updateProjectFields,
   getProjectSceneAnalysis,
   updateProjectSceneAnalysis,
   deleteProject
@@ -120,6 +121,21 @@ router.get('/:id', requireAuth, (req: AuthRequest, res: Response) => {
     return;
   }
   res.json(project);
+});
+
+// PATCH /api/projects/:id — update project fields (hotspots, tours, name, etc.)
+router.patch('/:id', requireAuth, (req: AuthRequest, res: Response) => {
+  const project = getProject(req.params.id);
+  if (!project) {
+    res.status(404).json({ error: 'Project not found' });
+    return;
+  }
+  if (project.user_id && project.user_id !== req.userId) {
+    res.status(403).json({ error: 'Access denied' });
+    return;
+  }
+  const updated = updateProjectFields(req.params.id, req.body);
+  res.json(updated);
 });
 
 // GET /api/projects/:id/frames — list extracted frames for a project

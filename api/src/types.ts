@@ -9,6 +9,8 @@ export interface Project {
   scene_analysis: string | null;
   error: string | null;
   user_id: string | null;
+  hotspots: string | null;
+  tours: string | null;
   created_at: string;
   updated_at: string;
 }

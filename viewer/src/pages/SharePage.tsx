@@ -5,6 +5,7 @@ import type { Project, Hotspot, Tour } from '../types';
 import SplatViewer from '../components/SplatViewer';
 import type { SplatViewerHandle } from '../components/SplatViewer';
 import HotspotRenderer from '../components/HotspotRenderer';
+import HotspotOverlays from '../components/HotspotOverlays';
 import HotspotPanel from '../components/HotspotPanel';
 import TourControls from '../components/TourControls';
 import { useTourPlayback } from '../hooks/useTourPlayback';
@@ -64,8 +65,11 @@ export default function SharePage() {
       })
       .then((p: Project) => {
         setProject(p);
-        setHotspots((p.hotspots as Hotspot[]) || []);
-        setTours((p.tours as Tour[]) || []);
+        // Parse hotspots/tours from JSON string if needed
+        const parsedHotspots = typeof p.hotspots === 'string' ? JSON.parse(p.hotspots) : (p.hotspots || []);
+        const parsedTours = typeof p.tours === 'string' ? JSON.parse(p.tours) : (p.tours || []);
+        setHotspots(parsedHotspots);
+        setTours(parsedTours);
       })
       .catch((err: Error) => {
         setLoadError(err.message);
@@ -87,8 +91,9 @@ export default function SharePage() {
       const nav = calculateNavigationCamera(hotspot, camera.position);
       const startPos = camera.position.clone();
       const startTarget = controls.target.clone();
-      const endPos = new THREE.Vector3(nav.position.x, nav.position.y, nav.position.z);
-      const endTarget = new THREE.Vector3(nav.target.x, nav.target.y, nav.target.z);
+      // Convert OpenCV space → world space (negate Y, Z)
+      const endPos = new THREE.Vector3(nav.position.x, -nav.position.y, -nav.position.z);
+      const endTarget = new THREE.Vector3(nav.target.x, -nav.target.y, -nav.target.z);
 
       let t = 0;
       const CAMERA_LERP = 0.09;
@@ -141,7 +146,7 @@ export default function SharePage() {
       {/* 3D Viewer */}
       <SplatViewer ref={viewerRef} url={resolveApiUrl(project.splat_url)} onLoad={handleLoad} />
 
-      {/* Hotspot 3D layer (view-only — no placement mode) */}
+      {/* Placement mode raycasting (view-only, no placement) */}
       <HotspotRenderer
         hotspots={hotspots}
         scene={viewerHandle?.scene ?? null}
@@ -149,8 +154,14 @@ export default function SharePage() {
         renderer={viewerHandle?.renderer ?? null}
         container={viewerHandle?.container ?? null}
         placementMode={false}
+      />
+
+      {/* HTML hotspot overlays (always on top of splat) */}
+      <HotspotOverlays
+        hotspots={hotspots}
+        camera={viewerHandle?.camera ?? null}
+        container={viewerHandle?.container ?? null}
         onHotspotClick={(h) => { setSelectedHotspot(h); flyToHotspot(h); }}
-        onPlaceHotspot={() => {}}
       />
 
       {/* Tour selector (if tours exist) */}

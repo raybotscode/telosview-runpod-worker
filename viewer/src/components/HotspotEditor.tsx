@@ -78,6 +78,7 @@ function HotspotForm({
       <div className="absolute inset-0 bg-black/50" onClick={onCancel} />
       <form
         onSubmit={handleSubmit}
+        onPointerDown={(e) => e.stopPropagation()}
         className="relative bg-slate-900 border border-slate-700 rounded-xl shadow-2xl w-full max-w-md max-h-[80vh] overflow-y-auto"
       >
         <div className="p-5 border-b border-slate-700">
@@ -87,7 +88,7 @@ function HotspotForm({
         </div>
 
         <div className="p-5 space-y-4">
-          <Field label="Label *" value={label} onChange={setLabel} placeholder="e.g. Main Entrance" required />
+          <Field label="Label *" value={label} onChange={setLabel} placeholder="e.g. Main Entrance" required autoFocus />
           <Field label="Description" value={description} onChange={setDescription} placeholder="Short description" />
           <div>
             <label className="block text-sm font-medium text-slate-300 mb-1">Color</label>
@@ -149,19 +150,16 @@ function HotspotForm({
   );
 }
 
-function Field({ label, value, onChange: _, ...props }: {
+function Field({ label, value, onChange, ...props }: {
   label: string; value: string; onChange: (v: string) => void;
 } & Omit<React.InputHTMLAttributes<HTMLInputElement>, 'onChange'>) {
-  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (_) _(e.target.value);
-  };
   return (
     <div>
       <label className="block text-sm font-medium text-slate-300 mb-1">{label}</label>
       <input
         type="text"
         value={value}
-        onChange={handleChange}
+        onChange={(e) => onChange(e.target.value)}
         className="w-full bg-slate-800 border border-slate-600 rounded-lg px-3 py-2 text-sm text-slate-200 placeholder-slate-500 focus:outline-none focus:border-teal-500"
         {...props}
       />

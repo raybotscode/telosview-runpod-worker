@@ -5,6 +5,7 @@ import { SparkRenderer, SplatMesh } from '@sparkjsdev/spark';
 
 export interface SplatViewerHandle {
   scene: THREE.Scene | null;
+  hotspotScene: THREE.Scene | null;
   camera: THREE.PerspectiveCamera | null;
   renderer: THREE.WebGLRenderer | null;
   controls: OrbitControls | null;
@@ -24,17 +25,19 @@ const SplatViewer = forwardRef<SplatViewerHandle, SplatViewerProps>(
 
     // Store Three.js objects in refs so the imperative handle can expose them
     const sceneRef = useRef<THREE.Scene | null>(null);
+    const hotspotSceneRef = useRef<THREE.Scene | null>(null);
     const cameraRef = useRef<THREE.PerspectiveCamera | null>(null);
     const rendererRef = useRef<THREE.WebGLRenderer | null>(null);
     const controlsRef = useRef<OrbitControls | null>(null);
 
     useImperativeHandle(ref, () => ({
       get scene() { return sceneRef.current; },
+      get hotspotScene() { return hotspotSceneRef.current; },
       get camera() { return cameraRef.current; },
       get renderer() { return rendererRef.current; },
       get controls() { return controlsRef.current; },
       get container() { return containerRef.current; },
-    }));
+    }), []); // stable — getters always read latest ref values
 
     useEffect(() => {
       const container = containerRef.current;
@@ -51,6 +54,11 @@ const SplatViewer = forwardRef<SplatViewerHandle, SplatViewerProps>(
       // Scene
       const scene = new THREE.Scene();
       sceneRef.current = scene;
+
+      // Separate scene for hotspot overlays — rendered after the main scene
+      // so hotspots always appear on top of the Gaussian splat
+      const hotspotScene = new THREE.Scene();
+      hotspotSceneRef.current = hotspotScene;
 
       // Camera
       const camera = new THREE.PerspectiveCamera(
@@ -127,6 +135,7 @@ const SplatViewer = forwardRef<SplatViewerHandle, SplatViewerProps>(
         controls.dispose();
         renderer.dispose();
         sceneRef.current = null;
+        hotspotSceneRef.current = null;
         cameraRef.current = null;
         rendererRef.current = null;
         controlsRef.current = null;
