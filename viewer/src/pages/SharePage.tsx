@@ -8,8 +8,10 @@ import HotspotRenderer from '../components/HotspotRenderer';
 import HotspotOverlays from '../components/HotspotOverlays';
 import HotspotPanel from '../components/HotspotPanel';
 import TourControls from '../components/TourControls';
+import ChatPanel from '../components/ChatPanel';
+import type { ChatMessage } from '../components/ChatPanel';
 import { useTourPlayback } from '../hooks/useTourPlayback';
-import { calculateNavigationCamera } from '../lib/navigationEngine';
+import { parseNavigationIntent, calculateNavigationCamera } from '../lib/navigationEngine';
 import * as THREE from 'three';
 
 const API = import.meta.env.VITE_API_URL || '/api';
@@ -28,6 +30,11 @@ export default function SharePage() {
   // Tour state
   const [tours, setTours] = useState<Tour[]>([]);
   const [activeTour, setActiveTour] = useState<Tour | null>(null);
+
+  // Chat state
+  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
+  const [chatMinimized, setChatMinimized] = useState(true);
+  const [isChatProcessing, setIsChatProcessing] = useState(false);
 
   const viewerRef = useRef<SplatViewerHandle>(null);
   const [viewerHandle, setViewerHandle] = useState<SplatViewerHandle | null>(null);
@@ -118,6 +125,41 @@ export default function SharePage() {
     [viewerHandle]
   );
 
+  // Add a chat message
+  const addChatMessage = useCallback((msg: Omit<ChatMessage, 'id' | 'timestamp'>) => {
+    setChatMessages((prev) => [
+      ...prev,
+      { ...msg, id: crypto.randomUUID(), timestamp: Date.now() },
+    ]);
+  }, []);
+
+  // Handle chat message (text or voice) — share page has no AI, just navigation
+  const handleChatMessage = useCallback(
+    async (text: string) => {
+      if (!text.trim()) return;
+
+      addChatMessage({ role: 'user', text });
+      setChatMinimized(false);
+      setIsChatProcessing(true);
+
+      const intent = parseNavigationIntent(text, hotspots);
+
+      if (intent?.action === 'navigate') {
+        const hotspot = intent.hotspot;
+        addChatMessage({ role: 'system', text: `Navigating to ${hotspot.label}...` });
+        flyToHotspot(hotspot);
+      } else {
+        addChatMessage({
+          role: 'assistant',
+          text: "Try saying a hotspot name, like \"go to the entrance\".",
+        });
+      }
+
+      setIsChatProcessing(false);
+    },
+    [hotspots, addChatMessage, flyToHotspot]
+  );
+
   useEffect(() => {
     return () => cancelAnimationFrame(navAnimRef.current);
   }, []);
@@ -198,6 +240,15 @@ export default function SharePage() {
           onClose={() => setActiveTour(null)}
         />
       )}
+
+      {/* Chat panel */}
+      <ChatPanel
+        messages={chatMessages}
+        onSendMessage={handleChatMessage}
+        isProcessing={isChatProcessing}
+        minimized={chatMinimized}
+        onToggleMinimize={() => setChatMinimized(!chatMinimized)}
+      />
 
       {/* Interaction hint */}
       <div className="absolute bottom-10 left-1/2 -translate-x-1/2 z-10 text-slate-500 text-xs">
