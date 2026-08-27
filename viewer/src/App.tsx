@@ -4,6 +4,7 @@ import Layout from './components/Layout';
 import DashboardPage from './pages/DashboardPage';
 import UploadPage from './pages/UploadPage';
 import ViewerPage from './pages/ViewerPage';
+import SharePage from './pages/SharePage';
 import LoginPage from './pages/LoginPage';
 import RegisterPage from './pages/RegisterPage';
 import type { ReactNode } from 'react';
@@ -33,6 +34,7 @@ function AppRoutes() {
         <Route path="/project/:id" element={<UploadPage />} />
       </Route>
       <Route path="/view/:id" element={<ViewerPage />} />
+      <Route path="/share/:id" element={<SharePage />} />
     </Routes>
   );
 }

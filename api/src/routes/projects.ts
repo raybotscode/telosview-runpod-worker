@@ -82,6 +82,32 @@ router.get('/', requireAuth, (req: AuthRequest, res: Response) => {
   res.json(projects);
 });
 
+// GET /api/projects/:id/share — public share link (no auth required)
+// Returns only the data needed to view the splat: name, splat_url, hotspots, tours.
+// Does NOT expose: video_path, user_id, scene_analysis, error, or other internal fields.
+router.get('/:id/share', (req: Request, res: Response) => {
+  const project = getProject(req.params.id);
+  if (!project) {
+    res.status(404).json({ error: 'Project not found' });
+    return;
+  }
+  if (project.status !== 'complete' || !project.splat_url) {
+    res.status(404).json({ error: 'This project is not available for sharing' });
+    return;
+  }
+  // Return only public-safe fields
+  res.json({
+    id: project.id,
+    name: project.name,
+    description: project.description,
+    splat_url: project.splat_url,
+    frame_count: project.frame_count,
+    hotspots: project.hotspots || [],
+    tours: project.tours || [],
+    created_at: project.created_at,
+  });
+});
+
 // GET /api/projects/:id — get project details
 router.get('/:id', requireAuth, (req: AuthRequest, res: Response) => {
   const project = getProject(req.params.id);

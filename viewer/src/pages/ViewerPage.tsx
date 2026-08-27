@@ -84,11 +84,12 @@ export default function ViewerPage() {
   }, [id]);
 
   const handleShare = useCallback(() => {
-    navigator.clipboard.writeText(window.location.href).then(() => {
+    const shareUrl = `${window.location.origin}/share/${id}`;
+    navigator.clipboard.writeText(shareUrl).then(() => {
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     });
-  }, []);
+  }, [id]);
 
   const handleLoad = useCallback((info: { splatCount: number }) => {
     setSplatCount(info.splatCount);
