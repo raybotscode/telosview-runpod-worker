@@ -9,6 +9,10 @@ export interface SplatViewerHandle {
   renderer: THREE.WebGLRenderer | null;
   controls: OrbitControls | null;
   container: HTMLDivElement | null;
+  /** Rotate the splat mesh by the given Euler angles (radians) */
+  rotateSplat: (x: number, y: number, z: number) => void;
+  /** Get current splat rotation */
+  getSplatRotation: () => { x: number; y: number; z: number };
 }
 
 interface SplatViewerProps {
@@ -29,6 +33,7 @@ const SplatViewer = forwardRef<SplatViewerHandle, SplatViewerProps>(
     const cameraRef = useRef<THREE.PerspectiveCamera | null>(null);
     const rendererRef = useRef<THREE.WebGLRenderer | null>(null);
     const controlsRef = useRef<OrbitControls | null>(null);
+    const splatMeshRef = useRef<SplatMesh | null>(null);
 
     useImperativeHandle(ref, () => ({
       get scene() { return sceneRef.current; },
@@ -36,6 +41,17 @@ const SplatViewer = forwardRef<SplatViewerHandle, SplatViewerProps>(
       get renderer() { return rendererRef.current; },
       get controls() { return controlsRef.current; },
       get container() { return containerRef.current; },
+      rotateSplat(x: number, y: number, z: number) {
+        const mesh = splatMeshRef.current;
+        if (mesh) {
+          mesh.rotation.set(x, y, z);
+          console.log(`%c🔄 Splat rotation set to (${x.toFixed(2)}, ${y.toFixed(2)}, ${z.toFixed(2)})`, 'color: #f59e0b; font-weight: bold');
+        }
+      },
+      getSplatRotation() {
+        const mesh = splatMeshRef.current;
+        return mesh ? { x: mesh.rotation.x, y: mesh.rotation.y, z: mesh.rotation.z } : { x: 0, y: 0, z: 0 };
+      },
     }), []); // stable — getters always read latest ref values
 
     useEffect(() => {
@@ -87,14 +103,15 @@ const SplatViewer = forwardRef<SplatViewerHandle, SplatViewerProps>(
           splatMesh = new SplatMesh({ url, lod: 'quality' });
           await splatMesh.initialized;
           if (disposed) return;
-          // splat.js trains in OpenCV convention (x right, y down, z forward —
-          // see splat-test/src/sfm/geometry.js). Three.js/Spark use y up, z back,
-          // so without this 180° X rotation the scene renders upside down.
-          splatMesh.rotation.x = Math.PI;
+          splatMeshRef.current = splatMesh;
+          // PLY is now pre-transformed to Three.js convention (y-up, z-back)
+          // by the native worker. No rotation needed.
           spark.add(splatMesh);
           setLoading(false);
           const count = splatMesh.numSplats || 0;
           console.log(`%c✨ Splat loaded: ${count.toLocaleString()} splats (LOD: quality)`, 'color: #f59e0b; font-weight: bold');
+          console.log(`%c🔄 Initial rotation: x=${splatMesh.rotation.x.toFixed(2)} y=${splatMesh.rotation.y.toFixed(2)} z=${splatMesh.rotation.z.toFixed(2)}`, 'color: #f59e0b; font-weight: bold');
+          console.log(`%c📦 Mesh position: x=${splatMesh.position.x.toFixed(2)} y=${splatMesh.position.y.toFixed(2)} z=${splatMesh.position.z.toFixed(2)}`, 'color: #f59e0b; font-weight: bold');
           onLoad?.({ splatCount: count });
         } catch (err) {
           if (!disposed) {

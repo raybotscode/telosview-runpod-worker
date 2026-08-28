@@ -58,6 +58,11 @@ export default function UploadPage() {
         if (data.type === 'progress') {
           setProcessing(data as unknown as ProcessingProgress);
         }
+        if (data.type === 'preview') {
+          // Preview is ready — reload project to get updated status
+          setProcessing(null);
+          loadProject();
+        }
         if (data.type === 'complete') {
           setProcessing(null);
           loadProject();
@@ -222,10 +227,15 @@ export default function UploadPage() {
       )}
 
       {/* Complete */}
-      {project.status === 'complete' && (
+      {(project.status === 'complete' || project.status === 'preview') && (
         <div className="bg-slate-800 rounded-xl p-6 border border-slate-700 text-center">
-          <div className="text-3xl mb-3">🎉</div>
-          <h3 className="text-slate-200 font-medium mb-2">Splat ready!</h3>
+          <div className="text-3xl mb-3">{project.status === 'preview' ? '⚡' : '🎉'}</div>
+          <h3 className="text-slate-200 font-medium mb-2">
+            {project.status === 'preview' ? 'Preview ready!' : 'Splat ready!'}
+          </h3>
+          {project.status === 'preview' && (
+            <p className="text-amber-400 text-sm mb-3">Full quality is still processing in the background</p>
+          )}
           {project.splat_count && (
             <p className="text-slate-400 text-sm mb-4">{project.splat_count.toLocaleString()} splats</p>
           )}
@@ -233,7 +243,7 @@ export default function UploadPage() {
             onClick={() => navigate(`/view/${project.id}`)}
             className="bg-teal-600 hover:bg-teal-500 text-white px-6 py-2.5 rounded-lg font-medium transition-colors"
           >
-            View Splat →
+            {project.status === 'preview' ? 'View Preview →' : 'View Splat →'}
           </button>
         </div>
       )}

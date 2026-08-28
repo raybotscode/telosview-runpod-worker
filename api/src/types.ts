@@ -21,6 +21,7 @@ export type ProjectStatus =
   | 'extracting'
   | 'extracted'
   | 'processing'
+  | 'preview'
   | 'complete'
   | 'error';
 
@@ -30,7 +31,7 @@ export interface CreateProjectBody {
 }
 
 export interface ProgressEvent {
-  type?: 'extraction' | 'extraction_complete' | 'progress' | 'complete' | 'error';
+  type?: 'extraction' | 'extraction_complete' | 'progress' | 'preview' | 'complete' | 'error';
   projectId: string;
   status: ProjectStatus;
   frameCount: number;

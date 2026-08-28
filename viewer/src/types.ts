@@ -1,4 +1,4 @@
-export type ProjectStatus = 'created' | 'extracting' | 'extracted' | 'processing' | 'complete' | 'error';
+export type ProjectStatus = 'created' | 'extracting' | 'extracted' | 'processing' | 'preview' | 'complete' | 'error';
 
 export interface Hotspot {
   id: string;

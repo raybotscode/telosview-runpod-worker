@@ -12,6 +12,7 @@ import {
   updateProjectVideoPath,
   updateProjectFrameCount,
   updateProjectSplatUrl,
+  updateProjectSplatUrlWithStatus,
   updateProjectFields,
   getProjectSceneAnalysis,
   updateProjectSceneAnalysis,
@@ -92,7 +93,7 @@ router.get('/:id/share', (req: Request, res: Response) => {
     res.status(404).json({ error: 'Project not found' });
     return;
   }
-  if (project.status !== 'complete' || !project.splat_url) {
+  if ((project.status !== 'complete' && project.status !== 'preview') || !project.splat_url) {
     res.status(404).json({ error: 'This project is not available for sharing' });
     return;
   }
@@ -136,6 +137,24 @@ router.patch('/:id', requireAuth, (req: AuthRequest, res: Response) => {
   }
   const updated = updateProjectFields(req.params.id, req.body);
   res.json(updated);
+});
+
+// PATCH /api/projects/:id/splat — update splat_url (used by orchestrator for preview/full)
+router.patch('/:id/splat', (req: Request, res: Response) => {
+  const projectId = req.params.id;
+  const project = getProject(projectId);
+  if (!project) {
+    res.status(404).json({ error: 'Project not found' });
+    return;
+  }
+  const { splat_url, status } = req.body as { splat_url?: string; status?: string };
+  if (!splat_url) {
+    res.status(400).json({ error: 'splat_url is required' });
+    return;
+  }
+  const validStatus = status === 'preview' || status === 'complete' ? status : 'complete';
+  updateProjectSplatUrlWithStatus(projectId, splat_url, validStatus);
+  res.json(getProject(projectId));
 });
 
 // GET /api/projects/:id/frames — list extracted frames for a project
@@ -190,7 +209,7 @@ router.get('/:id/status', (req: Request, res: Response) => {
 
   // Send current status immediately
   const initialEvent: ProgressEvent = {
-    type: project.status === 'complete' ? 'complete' : project.status === 'error' ? 'error' : 'progress',
+    type: project.status === 'complete' ? 'complete' : project.status === 'preview' ? 'preview' : project.status === 'error' ? 'error' : 'progress',
     projectId,
     status: project.status,
     frameCount: project.frame_count,
@@ -332,9 +351,10 @@ router.post('/:id/process', (req: Request, res: Response) => {
       apiBaseUrl,
     },
     (progress) => {
-      // Broadcast progress via SSE
+      // Broadcast progress via SSE — use 'preview' type when status is preview
+      const eventType = progress.status === 'preview' ? 'preview' : 'progress';
       broadcastProgress(projectId, {
-        type: 'progress',
+        type: eventType,
         projectId,
         status: progress.status as any,
         frameCount: project.frame_count,

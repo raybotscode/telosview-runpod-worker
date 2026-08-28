@@ -22,6 +22,8 @@ export default function SharePage() {
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [_splatCount, setSplatCount] = useState<number | null>(null);
+  const [isPreview, setIsPreview] = useState(false);
+  const [splatKey, setSplatKey] = useState(0);
 
   // Hotspot state (view-only)
   const [hotspots, setHotspots] = useState<Hotspot[]>([]);
@@ -72,6 +74,7 @@ export default function SharePage() {
       })
       .then((p: Project) => {
         setProject(p);
+        setIsPreview(p.status === 'preview');
         // Parse hotspots/tours from JSON string if needed
         const parsedHotspots = typeof p.hotspots === 'string' ? JSON.parse(p.hotspots) : (p.hotspots || []);
         const parsedTours = typeof p.tours === 'string' ? JSON.parse(p.tours) : (p.tours || []);
@@ -164,6 +167,29 @@ export default function SharePage() {
     return () => cancelAnimationFrame(navAnimRef.current);
   }, []);
 
+  // Poll for updates when status is 'preview'
+  useEffect(() => {
+    if (!id || !isPreview) return;
+    const pollInterval = setInterval(async () => {
+      try {
+        const res = await fetch(`${API}/projects/${id}/share`);
+        if (!res.ok) return;
+        const p: Project = await res.json();
+        if (p.status === 'complete' && p.splat_url !== project?.splat_url) {
+          setProject(p);
+          setIsPreview(false);
+          setSplatKey((k) => k + 1);
+        } else if (p.status === 'complete') {
+          setIsPreview(false);
+          setProject(p);
+        }
+      } catch {
+        // Ignore polling errors
+      }
+    }, 10000);
+    return () => clearInterval(pollInterval);
+  }, [id, isPreview, project?.splat_url]);
+
   if (loading) {
     return (
       <div className="h-screen flex items-center justify-center bg-slate-950">
@@ -186,7 +212,15 @@ export default function SharePage() {
   return (
     <div className="h-screen w-screen relative bg-slate-950">
       {/* 3D Viewer */}
-      <SplatViewer ref={viewerRef} url={resolveApiUrl(project.splat_url)} onLoad={handleLoad} />
+      <SplatViewer key={splatKey} ref={viewerRef} url={resolveApiUrl(project.splat_url)} onLoad={handleLoad} />
+
+      {/* Preview quality indicator */}
+      {isPreview && (
+        <div className="absolute top-4 left-1/2 -translate-x-1/2 z-20 bg-amber-900/80 backdrop-blur-sm text-amber-200 px-4 py-2 rounded-lg text-sm border border-amber-700 flex items-center gap-2">
+          <div className="animate-spin w-4 h-4 border-2 border-amber-400 border-t-transparent rounded-full" />
+          <span>Enhancing quality...</span>
+        </div>
+      )}
 
       {/* Placement mode raycasting (view-only, no placement) */}
       <HotspotRenderer

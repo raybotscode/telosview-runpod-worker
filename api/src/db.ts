@@ -113,6 +113,13 @@ export function updateProjectSplatUrl(id: string, splatUrl: string): void {
   stmt.run(splatUrl, id);
 }
 
+export function updateProjectSplatUrlWithStatus(id: string, splatUrl: string, status: ProjectStatus): void {
+  const stmt = db.prepare(
+    "UPDATE projects SET splat_url = ?, status = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now') WHERE id = ?"
+  );
+  stmt.run(splatUrl, status, id);
+}
+
 export function deleteProject(id: string): boolean {
   const result = db.prepare('DELETE FROM projects WHERE id = ?').run(id);
   return result.changes > 0;

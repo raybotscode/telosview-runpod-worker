@@ -150,7 +150,11 @@ app.get('/process/:projectId/progress', (req, res) => {
 app.get('/process/:projectId/result', (req, res) => {
   const { projectId } = req.params;
   const job = activeJobs.get(projectId);
-  const plyPath = (job && job.plyPath) || path.join(OUTPUT_DIR, `${projectId}.ply`);
+  // Support ?preview=1 to download the preview PLY
+  const isPreview = req.query.preview === '1';
+  const plyPath = isPreview
+    ? path.join(OUTPUT_DIR, `${projectId}_preview.ply`)
+    : (job && job.plyPath) || path.join(OUTPUT_DIR, `${projectId}.ply`);
   if (fs.existsSync(plyPath)) return res.download(plyPath, `${projectId}.ply`);
   if (job && job.status === 'error') return res.status(500).json({ error: job.error });
   return res.status(409).json({ error: 'not complete' });
@@ -215,73 +219,139 @@ async function runProcessing(job, framesDir, maxIters) {
   const fileBlobs = names.map((name) => ({ source: fs.readFileSync(path.join(framesDir, name)), name }));
   update(job, 'decode', 10, `Loaded ${fileBlobs.length} frames`);
 
-  const session = createSession({
-    maxIters,
-    initTarget: 40000,       // reduced from 60000 to fit GPU binding limit
-    maxViewW: 1920,          // cap training resolution
-    maxViewH: 1080,          // cap training resolution
+  // ── Phase 1: Quick preview pass (10k iters, initTarget 20k) ─────────────
+  console.log(`[native] Phase 1: Quick preview pass (maxIters=10000, initTarget=20000)`);
+  const previewSession = createSession({
+    maxIters: 10000,
+    initTarget: 20000,
+    maxViewW: 1920,
+    maxViewH: 1080,
     trainer: {
-      anisoReg: 0.01,        // stronger anti-needle regularization (default 0.005)
-      opacityReg: 0.015,     // slightly stronger opacity regularization (default 0.01)
-      minScale: 5e-4,        // higher floor to prevent sub-pixel needles (default 1e-4)
-      camOpt: true,          // camera pose optimization for phone video
+      anisoReg: 0.01,
+      opacityReg: 0.015,
+      minScale: 5e-4,
+      camOpt: true,
     }
   });
-  console.log(`[native] Training config: maxIters=${maxIters}, initTarget=40000, anisoReg=0.01, opacityReg=0.015, minScale=5e-4, camOpt=true`);
-  session.on('stage', (e) => {
+  previewSession.on('stage', (e) => {
     job.stage = e.stage;
-    job.message = `${e.stage}: ${e.detail || ''}`;
+    job.message = `[Preview] ${e.stage}: ${e.detail || ''}`;
     const pct = 15 + (e.done / Math.max(1, e.total)) * 20;
     job.progress = Math.min(35, pct);
     broadcast(job);
   });
-  session.on('log', (m) => console.log(`[splat] ${m}`));
-  session.on('metrics', (e) => {
+  previewSession.on('log', (m) => console.log(`[splat-preview] ${m}`));
+  previewSession.on('metrics', (e) => {
     job.stage = 'train';
-    job.message = `Iter ${e.iter} · ${e.splats} splats · ${Math.round(e.itersPerSec)} it/s`;
-    job.progress = 35 + Math.min(60, (e.iter / maxIters) * 60);
+    job.message = `[Preview] Iter ${e.iter} · ${e.splats} splats · ${Math.round(e.itersPerSec)} it/s`;
+    job.progress = 35 + Math.min(25, (e.iter / 10000) * 25);
     broadcast(job);
   });
 
-  // Decode + SfM + seed
+  // Decode + SfM + seed (shared for both phases — SfM is the expensive part)
   update(job, 'decode', 12, 'Decoding frames...');
-  await session.load(fileBlobs);
+  await previewSession.load(fileBlobs);
 
   update(job, 'sfm', 20, 'Structure from Motion...');
-  await session.solve();
+  await previewSession.solve();
 
   update(job, 'seed', 30, 'Seeding Gaussians...');
-  await session.seed();
+  await previewSession.seed();
 
-  // Train
-  update(job, 'train', 35, 'Training...');
-  session.start();
+  // Train preview
+  update(job, 'train', 35, 'Training preview...');
+  previewSession.start();
   await new Promise((resolve, reject) => {
-    const timeout = setTimeout(() => reject(new Error('Training timed out (30 min)')), 30 * 60 * 1000);
-    session.on('event', (e) => {
+    const timeout = setTimeout(() => reject(new Error('Preview training timed out (15 min)')), 15 * 60 * 1000);
+    previewSession.on('event', (e) => {
       if (e.kind === 'train-complete') { clearTimeout(timeout); resolve(); }
     });
   });
 
-  // Export PLY
-  update(job, 'export', 97, 'Exporting .ply...');
-  const plyBlob = await session.exportPlyBlob();
-  const plyBuf = Buffer.from(await plyBlob.arrayBuffer());
+  // Export preview PLY
+  update(job, 'export', 62, 'Exporting preview .ply...');
+  const previewPlyBlob = await previewSession.exportPlyBlob();
+  const previewPlyBuf = Buffer.from(await previewPlyBlob.arrayBuffer());
+  const transformedPreviewPly = transformPlyToThreeJS(previewPlyBuf);
+  const previewPlyPath = path.join(OUTPUT_DIR, `${projectId}_preview.ply`);
+  fs.writeFileSync(previewPlyPath, transformedPreviewPly);
+  console.log(`[native] Preview PLY: ${previewPlyPath} (${(previewPlyBuf.length / 1024 / 1024).toFixed(1)} MB)`);
 
-  // Transform PLY from OpenCV convention (splat.js training) to Three.js convention
-  // (Spark.js rendering). Negate Y, Z positions and qy, qz quaternion components.
-  // This eliminates the need for rotation.x = Math.PI hack in the viewer.
-  const transformedPly = transformPlyToThreeJS(plyBuf);
-  const plyPath = path.join(OUTPUT_DIR, `${projectId}.ply`);
-  fs.writeFileSync(plyPath, transformedPly);
+  // Broadcast preview event — the orchestrator will download and serve this
+  job.plyPath = previewPlyPath;
+  job.status = 'preview';
+  job.sseType = 'preview';
+  job.progress = 65;
+  job.stage = 'preview';
+  job.message = `Preview ready! (${(previewPlyBuf.length / 1024 / 1024).toFixed(1)} MB) — Enhancing quality...`;
+  broadcast(job);
+  console.log(`[native] Preview complete for ${projectId}`);
 
-  job.plyPath = plyPath;
+  // ── Phase 2: Full quality pass (60k iters, initTarget 40k) ──────────────
+  console.log(`[native] Phase 2: Full quality pass (maxIters=${maxIters}, initTarget=40000)`);
+  const fullSession = createSession({
+    maxIters,
+    initTarget: 40000,
+    maxViewW: 1920,
+    maxViewH: 1080,
+    trainer: {
+      anisoReg: 0.01,
+      opacityReg: 0.015,
+      minScale: 5e-4,
+      camOpt: true,
+    }
+  });
+  fullSession.on('stage', (e) => {
+    job.stage = e.stage;
+    job.message = `[Full] ${e.stage}: ${e.detail || ''}`;
+    const pct = 65 + (e.done / Math.max(1, e.total)) * 15;
+    job.progress = Math.min(80, pct);
+    broadcast(job);
+  });
+  fullSession.on('log', (m) => console.log(`[splat-full] ${m}`));
+  fullSession.on('metrics', (e) => {
+    job.stage = 'train-full';
+    job.message = `[Full] Iter ${e.iter} · ${e.splats} splats · ${Math.round(e.itersPerSec)} it/s`;
+    job.progress = 65 + Math.min(30, (e.iter / maxIters) * 30);
+    broadcast(job);
+  });
+
+  // Decode + SfM + seed for full pass
+  update(job, 'decode', 66, '[Full] Decoding frames...');
+  await fullSession.load(fileBlobs);
+
+  update(job, 'sfm', 70, '[Full] Structure from Motion...');
+  await fullSession.solve();
+
+  update(job, 'seed', 75, '[Full] Seeding Gaussians...');
+  await fullSession.seed();
+
+  // Train full
+  update(job, 'train-full', 80, 'Training full quality...');
+  fullSession.start();
+  await new Promise((resolve, reject) => {
+    const timeout = setTimeout(() => reject(new Error('Full training timed out (30 min)')), 30 * 60 * 1000);
+    fullSession.on('event', (e) => {
+      if (e.kind === 'train-complete') { clearTimeout(timeout); resolve(); }
+    });
+  });
+
+  // Export full PLY
+  update(job, 'export', 97, 'Exporting final .ply...');
+  const fullPlyBlob = await fullSession.exportPlyBlob();
+  const fullPlyBuf = Buffer.from(await fullPlyBlob.arrayBuffer());
+  const transformedFullPly = transformPlyToThreeJS(fullPlyBuf);
+  const fullPlyPath = path.join(OUTPUT_DIR, `${projectId}.ply`);
+  fs.writeFileSync(fullPlyPath, transformedFullPly);
+
+  job.plyPath = fullPlyPath;
   job.status = 'done';
+  job.sseType = 'complete';
   job.progress = 100;
   job.stage = 'done';
-  job.message = `Complete! PLY: ${(plyBuf.length / 1024 / 1024).toFixed(1)} MB`;
+  job.message = `Complete! PLY: ${(fullPlyBuf.length / 1024 / 1024).toFixed(1)} MB`;
   broadcast(job);
-  console.log(`[native] Complete: ${plyPath} (${(plyBuf.length / 1024 / 1024).toFixed(1)} MB)`);
+  console.log(`[native] Complete: ${fullPlyPath} (${(fullPlyBuf.length / 1024 / 1024).toFixed(1)} MB)`);
   activeJobs.delete(projectId);
   } finally {
     clearInterval(heartbeat);
@@ -289,7 +359,7 @@ async function runProcessing(job, framesDir, maxIters) {
 }
 
 function update(job, stage, progress, message) { job.stage = stage; job.progress = progress; job.message = message; }
-function state(job) { return { status: job.status, stage: job.stage, progress: job.progress, message: job.message, error: job.error }; }
+function state(job) { return { type: job.sseType || (job.status === 'done' ? 'complete' : job.status === 'preview' ? 'preview' : job.status === 'error' ? 'error' : 'progress'), status: job.status, stage: job.stage, progress: job.progress, message: job.message, error: job.error }; }
 function broadcast(job) {
   const data = JSON.stringify(state(job));
   for (const c of job.sseClients) { try { c.write(`data: ${data}\n\n`); } catch { job.sseClients.delete(c); } }

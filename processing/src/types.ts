@@ -69,6 +69,7 @@ export type ProcessingProgressCallback = (progress: ProcessingProgress) => void;
 
 /** State received from the RunPod worker's SSE stream */
 export interface RunPodWorkerState {
+  type: string;
   status: string;
   stage: string;
   progress: number;

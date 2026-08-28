@@ -299,7 +299,7 @@ async function processProjectRunPod(
 
     // 6. Stream progress via SSE
     const result = await streamRunPodProgress(
-      endpoint, job.projectId, onProgress
+      endpoint, job.projectId, onProgress, job.apiBaseUrl
     );
 
     if (!result.success) {
@@ -399,7 +399,8 @@ async function uploadFramesToPod(
 async function streamRunPodProgress(
   endpoint: string,
   projectId: string,
-  onProgress?: ProcessingProgressCallback
+  onProgress?: ProcessingProgressCallback,
+  apiBaseUrl?: string
 ): Promise<{ success: boolean; error?: string; plySize: number; metrics: any }> {
   return new Promise((resolve, reject) => {
     const timeout = setTimeout(() => {
@@ -419,6 +420,7 @@ async function streamRunPodProgress(
       const reader = res.body!.getReader();
       const decoder = new TextDecoder();
       let buffer = '';
+      let previewHandled = false;
 
       function processChunk(): Promise<any> {
         return reader.read().then(({ done, value }) => {
@@ -437,9 +439,45 @@ async function streamRunPodProgress(
             try {
               const state: RunPodWorkerState = JSON.parse(line.slice(6));
 
+              // Handle preview event — download preview PLY and update project
+              if (state.type === 'preview' && !previewHandled) {
+                previewHandled = true;
+                console.log(`[orchestrator] Preview ready for ${projectId}`);
+                onProgress?.({
+                  projectId,
+                  status: 'preview',
+                  stage: 'preview',
+                  progress: Math.round(state.progress),
+                  message: state.message,
+                  metrics: state.metrics,
+                });
+                // Download preview PLY and update project asynchronously
+                downloadPreviewPlyFromPod(endpoint, projectId).then(async (plyPath) => {
+                  if (apiBaseUrl) {
+                    try {
+                      await fetch(`${apiBaseUrl}/api/projects/${projectId}/splat`, {
+                        method: 'PATCH',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                          splat_url: `/api/projects/${projectId}/model.ply`,
+                          status: 'preview',
+                        }),
+                      });
+                      console.log(`[orchestrator] Project ${projectId} updated with preview splat_url`);
+                    } catch (err: any) {
+                      console.error(`[orchestrator] Failed to update project with preview:`, err.message);
+                    }
+                  }
+                }).catch(err => {
+                  console.error(`[orchestrator] Failed to download preview PLY:`, err.message);
+                });
+                // Continue streaming — don't resolve yet
+                continue;
+              }
+
               onProgress?.({
                 projectId,
-                status: state.status === 'done' ? 'complete' : 'processing',
+                status: state.status === 'done' ? 'complete' : state.status === 'preview' ? 'preview' : 'processing',
                 stage: state.stage,
                 progress: Math.round(state.progress),
                 message: state.message,
@@ -498,6 +536,25 @@ async function downloadPlyFromPod(
   fs.writeFileSync(plyPath, Buffer.from(arrayBuf));
 
   console.log(`[orchestrator] PLY downloaded: ${plyPath} (${(arrayBuf.byteLength / 1024 / 1024).toFixed(1)} MB)`);
+  return plyPath;
+}
+
+/** Download the preview PLY from the RunPod worker */
+async function downloadPreviewPlyFromPod(
+  endpoint: string,
+  projectId: string
+): Promise<string> {
+  const res = await fetch(`${endpoint}/process/${projectId}/result?preview=1`);
+  if (!res.ok) {
+    const body = await res.text();
+    throw new Error(`Preview PLY download failed: ${res.status} ${body}`);
+  }
+
+  const arrayBuf = await res.arrayBuffer();
+  const plyPath = path.join(PLY_OUTPUT_DIR, `${projectId}.ply`);
+  fs.writeFileSync(plyPath, Buffer.from(arrayBuf));
+
+  console.log(`[orchestrator] Preview PLY downloaded: ${plyPath} (${(arrayBuf.byteLength / 1024 / 1024).toFixed(1)} MB)`);
   return plyPath;
 }
 
