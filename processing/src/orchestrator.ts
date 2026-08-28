@@ -289,7 +289,7 @@ async function processProjectRunPod(
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         projectId: job.projectId,
-        maxIters: job.maxIters || 20000,
+        maxIters: job.maxIters || 60000,
       }),
     });
     if (!processRes.ok) {
