@@ -106,7 +106,7 @@ app.post('/upload-frames/:projectId', upload.array('frames', 500), (req, res) =>
 });
 
 app.post('/process', async (req, res) => {
-  const { projectId, maxIters = 20000 } = req.body;
+  const { projectId, maxIters = 60000 } = req.body;
   if (!projectId) return res.status(400).json({ error: 'projectId required' });
   if (activeJobs.has(projectId)) return res.status(409).json({ error: 'already processing' });
 
@@ -215,7 +215,16 @@ async function runProcessing(job, framesDir, maxIters) {
   const fileBlobs = names.map((name) => ({ source: fs.readFileSync(path.join(framesDir, name)), name }));
   update(job, 'decode', 10, `Loaded ${fileBlobs.length} frames`);
 
-  const session = createSession({ maxIters, initTarget: 60000 });
+  const session = createSession({
+    maxIters,
+    initTarget: 60000,
+    trainer: {
+      anisoReg: 0.01,        // stronger anti-needle regularization (default 0.005)
+      opacityReg: 0.015,     // slightly stronger opacity regularization (default 0.01)
+      minScale: 5e-4,        // higher floor to prevent sub-pixel needles (default 1e-4)
+      camOpt: true,          // camera pose optimization for phone video
+    }
+  });
   session.on('stage', (e) => {
     job.stage = e.stage;
     job.message = `${e.stage}: ${e.detail || ''}`;
