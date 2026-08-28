@@ -156,6 +156,48 @@ app.get('/process/:projectId/result', (req, res) => {
   return res.status(409).json({ error: 'not complete' });
 });
 
+// ── PLY Coordinate Transform ────────────────────────────────────────────────
+// splat.js trains in OpenCV convention (x right, y down, z forward).
+// Spark.js/Three.js renders in y-up, z-back convention.
+// Transform: negate Y, Z positions and qy, qz quaternion components.
+function transformPlyToThreeJS(buf) {
+  const headerEnd = buf.indexOf(Buffer.from('end_header\n')) + Buffer.from('end_header\n').length;
+  const header = buf.slice(0, headerEnd).toString();
+
+  const propLines = header.split('\n').filter(l => l.startsWith('property'));
+  const propNames = propLines.map(l => l.trim().split(/\s+/).pop());
+  const stride = propLines.length * 4;
+
+  // Find indices of properties to negate
+  const yIdx = propNames.indexOf('y');
+  const zIdx = propNames.indexOf('z');
+  const qyIdx = propNames.indexOf('rot_1'); // quaternion y component
+  const qzIdx = propNames.indexOf('rot_2'); // quaternion z component
+
+  if (yIdx < 0 || zIdx < 0 || qyIdx < 0 || qzIdx < 0) {
+    console.warn('[transform] Could not find y/z/rot_1/rot_2 properties, skipping transform');
+    return buf;
+  }
+
+  // Copy buffer and transform in-place
+  const out = Buffer.from(buf);
+  const vertexMatch = header.match(/element vertex (\d+)/);
+  const vertexCount = vertexMatch ? parseInt(vertexMatch[1]) : 0;
+
+  for (let i = 0; i < vertexCount; i++) {
+    const o = headerEnd + i * stride;
+    // Negate Y and Z positions
+    out.writeFloatLE(-buf.readFloatLE(o + yIdx * 4), o + yIdx * 4);
+    out.writeFloatLE(-buf.readFloatLE(o + zIdx * 4), o + zIdx * 4);
+    // Negate qy and qz quaternion components
+    out.writeFloatLE(-buf.readFloatLE(o + qyIdx * 4), o + qyIdx * 4);
+    out.writeFloatLE(-buf.readFloatLE(o + qzIdx * 4), o + qzIdx * 4);
+  }
+
+  console.log(`[transform] Converted ${vertexCount} vertices from OpenCV to Three.js convention`);
+  return out;
+}
+
 // ── Processing ──────────────────────────────────────────────────────────────
 async function runProcessing(job, framesDir, maxIters) {
   const { projectId } = job;
@@ -213,8 +255,13 @@ async function runProcessing(job, framesDir, maxIters) {
   update(job, 'export', 97, 'Exporting .ply...');
   const plyBlob = await session.exportPlyBlob();
   const plyBuf = Buffer.from(await plyBlob.arrayBuffer());
+
+  // Transform PLY from OpenCV convention (splat.js training) to Three.js convention
+  // (Spark.js rendering). Negate Y, Z positions and qy, qz quaternion components.
+  // This eliminates the need for rotation.x = Math.PI hack in the viewer.
+  const transformedPly = transformPlyToThreeJS(plyBuf);
   const plyPath = path.join(OUTPUT_DIR, `${projectId}.ply`);
-  fs.writeFileSync(plyPath, plyBuf);
+  fs.writeFileSync(plyPath, transformedPly);
 
   job.plyPath = plyPath;
   job.status = 'done';
