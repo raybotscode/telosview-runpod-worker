@@ -374,7 +374,7 @@ async function uploadFramesToPod(
 
   if (files.length === 0) throw new Error('No frame files found');
 
-  const BATCH = 20;
+  const BATCH = 5;  // reduced from20 to avoid RunPod proxy timeout (524)
   for (let i = 0; i < files.length; i += BATCH) {
     const batch = files.slice(i, i + BATCH);
     const form = new FormData();
@@ -385,6 +385,7 @@ async function uploadFramesToPod(
     const res = await fetch(`${endpoint}/upload-frames/${projectId}`, {
       method: 'POST',
       body: form,
+      signal: AbortSignal.timeout(120 * 1000), // 2 min timeout per batch
     });
     if (!res.ok) {
       const body = await res.text();
