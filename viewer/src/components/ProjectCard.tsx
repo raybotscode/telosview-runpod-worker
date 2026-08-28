@@ -12,6 +12,7 @@ const statusColors: Record<ProjectStatus, string> = {
   extracting: 'bg-amber-600 text-amber-100',
   extracted: 'bg-blue-600 text-blue-100',
   processing: 'bg-purple-600 text-purple-100',
+  preview: 'bg-teal-600 text-teal-100',
   complete: 'bg-green-600 text-green-100',
   error: 'bg-red-600 text-red-100',
 };
