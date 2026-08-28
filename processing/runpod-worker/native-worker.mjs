@@ -225,6 +225,7 @@ async function runProcessing(job, framesDir, maxIters) {
       camOpt: true,          // camera pose optimization for phone video
     }
   });
+  console.log(`[native] Training config: maxIters=${maxIters}, anisoReg=0.01, opacityReg=0.015, minScale=5e-4, camOpt=true`);
   session.on('stage', (e) => {
     job.stage = e.stage;
     job.message = `${e.stage}: ${e.detail || ''}`;
