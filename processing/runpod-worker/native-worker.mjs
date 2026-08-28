@@ -217,7 +217,9 @@ async function runProcessing(job, framesDir, maxIters) {
 
   const session = createSession({
     maxIters,
-    initTarget: 60000,
+    initTarget: 40000,       // reduced from 60000 to fit GPU binding limit
+    maxViewW: 1920,          // cap training resolution
+    maxViewH: 1080,          // cap training resolution
     trainer: {
       anisoReg: 0.01,        // stronger anti-needle regularization (default 0.005)
       opacityReg: 0.015,     // slightly stronger opacity regularization (default 0.01)
@@ -225,7 +227,7 @@ async function runProcessing(job, framesDir, maxIters) {
       camOpt: true,          // camera pose optimization for phone video
     }
   });
-  console.log(`[native] Training config: maxIters=${maxIters}, anisoReg=0.01, opacityReg=0.015, minScale=5e-4, camOpt=true`);
+  console.log(`[native] Training config: maxIters=${maxIters}, initTarget=40000, anisoReg=0.01, opacityReg=0.015, minScale=5e-4, camOpt=true`);
   session.on('stage', (e) => {
     job.stage = e.stage;
     job.message = `${e.stage}: ${e.detail || ''}`;
