@@ -298,7 +298,7 @@ async function runProcessing(job, framesDir, maxIters) {
     maxViewW: 3840,
     maxViewH: 2160,
     trainer: {
-      shDeg: 3,
+      shDeg: 2,
       anisoReg: 0.002,
       opacityReg: 0.003,
       maxSplats: 1200000,

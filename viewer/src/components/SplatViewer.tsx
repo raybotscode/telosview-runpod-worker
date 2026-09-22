@@ -101,7 +101,11 @@ const SplatViewer = forwardRef<SplatViewerHandle, SplatViewerProps>(
           setError(null);
           // LOD: reduce splat count at load time with quality-preserving algorithm
           splatMesh = new SplatMesh({ url, lod: 'quality' });
-          await splatMesh.initialized;
+          // Timeout after 90 seconds — large PLYs shouldn't take this long
+          const timeout = new Promise<never>((_, reject) =>
+            setTimeout(() => reject(new Error('Loading timed out (90s). The splat may be too large or incompatible.')), 90000)
+          );
+          await Promise.race([splatMesh.initialized, timeout]);
           if (disposed) return;
           splatMeshRef.current = splatMesh;
           // PLY is now pre-transformed to Three.js convention (y-up, z-back)

@@ -56,7 +56,13 @@ export default function UploadPage() {
       esRef.current?.close();
       esRef.current = connectSSE(id, (data) => {
         if (data.type === 'progress') {
-          setProcessing(data as unknown as ProcessingProgress);
+          setProcessing({
+            stage: data.stage || data.status || 'Processing',
+            progress: data.percent ?? data.progress ?? 0,
+            message: data.message || 'Processing...',
+            type: data.type,
+            status: data.status,
+          } as ProcessingProgress);
         }
         if (data.type === 'preview') {
           // Preview is ready — reload project to get updated status
