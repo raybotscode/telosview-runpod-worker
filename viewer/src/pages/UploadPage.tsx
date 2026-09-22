@@ -176,8 +176,8 @@ export default function UploadPage() {
           <h3 className="text-slate-200 font-medium mb-3">Extracting frames...</h3>
           <ProgressBar
             percent={extraction.percent}
-            label={`Frame ${extraction.frame} / ${extraction.total_frames}`}
-            sublabel={`${Math.round(extraction.percent)}%`}
+            label={`Frame ${extraction.frame ?? extraction.frameCount ?? 0} / ${extraction.total_frames ?? extraction.totalFrames ?? '?'}`}
+            sublabel={extraction.message || `${Math.round(extraction.percent)}%`}
             color="blue"
           />
         </div>
@@ -203,17 +203,19 @@ export default function UploadPage() {
         <div className="bg-slate-800 rounded-xl p-6 border border-slate-700">
           <h3 className="text-slate-200 font-medium mb-4">Processing splat...</h3>
           <ProgressBar
-            percent={processing.percent}
-            label={processing.stage}
-            sublabel={`Iteration ${processing.iteration}`}
+            percent={processing.progress}
+            label={processing.stage || 'Processing'}
+            sublabel={processing.message || `${Math.round(processing.progress)}%`}
             color="purple"
           />
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-4">
-            <Stat label="Splats" value={processing.splats.toLocaleString()} />
-            <Stat label="Iter/s" value={processing.iter_per_sec.toFixed(1)} />
-            <Stat label="PSNR" value={processing.psnr.toFixed(2)} />
-            <Stat label="Progress" value={`${Math.round(processing.percent)}%`} />
-          </div>
+          {processing.splats != null && (
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-4">
+              <Stat label="Splats" value={processing.splats.toLocaleString()} />
+              <Stat label="Iter/s" value={(processing.iter_per_sec ?? 0).toFixed(1)} />
+              <Stat label="PSNR" value={(processing.psnr ?? 0).toFixed(2)} />
+              <Stat label="Progress" value={`${Math.round(processing.progress)}%`} />
+            </div>
+          )}
         </div>
       )}
 

@@ -16,6 +16,10 @@ app.use(cors({
 }));
 app.use(express.json());
 
+// Serve built viewer frontend
+const viewerDistDir = path.resolve(__dirname, '..', '..', 'viewer', 'dist');
+app.use(express.static(viewerDistDir));
+
 // Static file serving for extracted frames
 const framesDir = path.resolve(__dirname, '..', '..', 'processing', 'frames');
 app.use('/frames', express.static(framesDir));
@@ -42,6 +46,11 @@ app.get('/api/health', (_req, res) => {
     splatSrcDir,
     workerHtml: workerHtmlPath,
   });
+});
+
+// Client-side routing fallback — serve index.html for all non-API routes
+app.get('*', (_req, res) => {
+  res.sendFile(path.join(viewerDistDir, 'index.html'));
 });
 
 app.listen(PORT, () => {

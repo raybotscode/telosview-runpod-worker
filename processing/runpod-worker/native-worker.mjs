@@ -106,7 +106,7 @@ app.post('/upload-frames/:projectId', upload.array('frames', 500), (req, res) =>
 });
 
 app.post('/process', async (req, res) => {
-  const { projectId, maxIters = 60000 } = req.body;
+  const { projectId, maxIters = 100000 } = req.body;
   if (!projectId) return res.status(400).json({ error: 'projectId required' });
   if (activeJobs.has(projectId)) return res.status(409).json({ error: 'already processing' });
 
@@ -219,14 +219,15 @@ async function runProcessing(job, framesDir, maxIters) {
   const fileBlobs = names.map((name) => ({ source: fs.readFileSync(path.join(framesDir, name)), name }));
   update(job, 'decode', 10, `Loaded ${fileBlobs.length} frames`);
 
-  // ── Phase 1: Quick preview pass (10k iters, initTarget 20k) ─────────────
-  console.log(`[native] Phase 1: Quick preview pass (maxIters=10000, initTarget=20000)`);
+  // ── Phase 1: Quick preview pass (15k iters, initTarget 30k) ─────────────
+  console.log(`[native] Phase 1: Quick preview pass (maxIters=15000, initTarget=30000)`);
   const previewSession = createSession({
-    maxIters: 10000,
-    initTarget: 20000,
-    maxViewW: 1920,
-    maxViewH: 1080,
+    maxIters: 15000,
+    initTarget: 30000,
+    maxViewW: 2560,
+    maxViewH: 1440,
     trainer: {
+      shDeg: 2,
       anisoReg: 0.01,
       opacityReg: 0.015,
       minScale: 5e-4,
@@ -262,7 +263,7 @@ async function runProcessing(job, framesDir, maxIters) {
   update(job, 'train', 35, 'Training preview...');
   previewSession.start();
   await new Promise((resolve, reject) => {
-    const timeout = setTimeout(() => reject(new Error('Preview training timed out (15 min)')), 15 * 60 * 1000);
+    const timeout = setTimeout(() => reject(new Error('Preview training timed out (20 min)')), 20 * 60 * 1000);
     previewSession.on('event', (e) => {
       if (e.kind === 'train-complete') { clearTimeout(timeout); resolve(); }
     });
@@ -287,14 +288,15 @@ async function runProcessing(job, framesDir, maxIters) {
   broadcast(job);
   console.log(`[native] Preview complete for ${projectId}`);
 
-  // ── Phase 2: Full quality pass (60k iters, initTarget 40k) ──────────────
-  console.log(`[native] Phase 2: Full quality pass (maxIters=${maxIters}, initTarget=40000)`);
+  // ── Phase 2: Full quality pass (100k iters, initTarget 150k) ──────────────
+  console.log(`[native] Phase 2: Full quality pass (maxIters=${maxIters}, initTarget=150000)`);
   const fullSession = createSession({
     maxIters,
-    initTarget: 40000,
-    maxViewW: 1920,
-    maxViewH: 1080,
+    initTarget: 150000,
+    maxViewW: 2560,
+    maxViewH: 1440,
     trainer: {
+      shDeg: 2,
       anisoReg: 0.01,
       opacityReg: 0.015,
       minScale: 5e-4,
@@ -330,7 +332,7 @@ async function runProcessing(job, framesDir, maxIters) {
   update(job, 'train-full', 80, 'Training full quality...');
   fullSession.start();
   await new Promise((resolve, reject) => {
-    const timeout = setTimeout(() => reject(new Error('Full training timed out (30 min)')), 30 * 60 * 1000);
+    const timeout = setTimeout(() => reject(new Error('Full training timed out (45 min)')), 45 * 60 * 1000);
     fullSession.on('event', (e) => {
       if (e.kind === 'train-complete') { clearTimeout(timeout); resolve(); }
     });

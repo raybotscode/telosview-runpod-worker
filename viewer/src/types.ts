@@ -50,17 +50,28 @@ export interface Project {
 }
 
 export interface ProcessingProgress {
+  type?: string;
+  status?: string;
   stage: string;
-  iteration: number;
-  total_iterations: number;
-  splats: number;
-  iter_per_sec: number;
-  psnr: number;
-  percent: number;
+  progress: number;
+  message: string;
+  error?: string;
+  // Optional detailed metrics from worker (may not always be present)
+  iteration?: number;
+  total_iterations?: number;
+  splats?: number;
+  iter_per_sec?: number;
+  psnr?: number;
 }
 
 export interface ExtractionProgress {
-  frame: number;
-  total_frames: number;
+  type?: string;
+  projectId?: string;
+  status?: string;
+  frame?: number;
+  total_frames?: number;
+  frameCount?: number;
+  totalFrames?: number;
   percent: number;
+  message?: string;
 }
